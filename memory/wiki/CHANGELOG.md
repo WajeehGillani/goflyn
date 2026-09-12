@@ -204,3 +204,17 @@ Evidence reviewed:
 
 - [source-001](../raw/source-001.md) — John
 - [source-002](../raw/source-002.md) — Sarah
+
+## Conflict Resolution — conflict-d4016ab5e4939aee
+
+Entity: [Acme Corp](customers/acme-corp.md)
+Field: aircraft&#95;preferences
+Resolution: Challenger&#45;class aircraft
+Resolved by: Sarah
+Reason: thats the valid
+Resolved at: 2026-09-12T16:00:04.262510+00:00
+
+Evidence reviewed:
+
+- [source-003](../raw/source-003.md) — Sarah
+- [source-008](../raw/source-008.md) — Sarah
