@@ -96,3 +96,19 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - No unresolved conflicts detected in this source's facts.
+
+## source-007
+
+Contributor: Sarah
+Created at: 2026-09-12T14:41:22.005113+00:00
+Source: [source-007](../raw/source-007.md)
+
+Updated:
+
+- [N777SB](aircraft/n777sb.md)
+- [SkyBridge Aviation](operators/skybridge-aviation.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
