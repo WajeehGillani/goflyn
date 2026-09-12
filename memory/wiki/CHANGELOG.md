@@ -174,3 +174,19 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - No unresolved conflicts detected in this source's facts.
+
+## source-012
+
+Contributor: Sarah
+Created at: 2026-09-12T15:19:22.226143+00:00
+Source: [source-012](../raw/source-012.md)
+
+Updated:
+
+- [N456FC](aircraft/n456fc.md)
+- [Falcon Charter](operators/falcon-charter.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- Unresolved conflict: N456FC.home&#95;base (conflict-2c5cf0dcf7fbb76f).
