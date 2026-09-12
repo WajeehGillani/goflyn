@@ -128,3 +128,18 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - Unresolved conflict: Acme Corp.aircraft&#95;preferences (conflict-d4016ab5e4939aee).
+
+## source-009
+
+Contributor: John
+Created at: 2026-09-12T14:41:28.368470+00:00
+Source: [source-009](../raw/source-009.md)
+
+Updated:
+
+- [Atlantic Air](operators/atlantic-air.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
