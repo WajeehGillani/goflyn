@@ -11,6 +11,7 @@ Type: operator
 
 ## Related entities
 
+- [N222FC](../aircraft/n222fc.md) — [source-013](../../raw/source-013.md) — Sarah
 - [N456FC](../aircraft/n456fc.md) — [source-011](../../raw/source-011.md) — hassan<br>[source-012](../../raw/source-012.md) — Sarah
 
 ## Conflicts
@@ -21,3 +22,4 @@ No unresolved conflicts.
 
 - [source-011](../../raw/source-011.md) — hassan
 - [source-012](../../raw/source-012.md) — Sarah
+- [source-013](../../raw/source-013.md) — Sarah

@@ -218,3 +218,19 @@ Evidence reviewed:
 
 - [source-003](../raw/source-003.md) — Sarah
 - [source-008](../raw/source-008.md) — Sarah
+
+## source-013
+
+Contributor: Sarah
+Created at: 2026-09-12T16:25:25.709930+00:00
+Source: [source-013](../raw/source-013.md)
+
+Updated:
+
+- [N222FC](aircraft/n222fc.md)
+- [Falcon Charter](operators/falcon-charter.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
