@@ -1,11 +1,13 @@
 """Conversational notes invoke the same explicit ingest API as /add."""
 
 from rich.console import Console
+from rich.text import Text
 
 from goflight_memory.agent.prompts import HELP, WELCOME
 from goflight_memory.agent.router import route
 from goflight_memory.core.ingest import IngestError, ingest
-from goflight_memory.core.models import IngestResult, Intent
+from goflight_memory.core.models import IngestResult, Intent, QueryResult
+from goflight_memory.core.query import QueryError, query
 from goflight_memory.infra.config import Settings
 from goflight_memory.infra.git import GitError
 from goflight_memory.infra.lock import repository_lock
@@ -44,6 +46,15 @@ def show_result(console: Console, result: IngestResult) -> None:
     console.print(f"Git commit: {result.git_commit[:7]}")
 
 
+def show_query(console: Console, result: QueryResult, paths: ProjectPaths) -> None:
+    console.print(f"Memory › {result.answer}", markup=False)
+    if result.pages_used:
+        console.print("\nPages used:")
+        for name in result.pages_used:
+            uri = paths.memory_path(f"wiki/{name}").as_uri()
+            console.print(Text.assemble("• ", (name, f"link {uri}")))
+
+
 def run_chat(settings: Settings) -> None:
     console = Console(highlight=False)
     console.print("GoFlight Team Memory", style="bold cyan")
@@ -79,14 +90,14 @@ def run_chat(settings: Settings) -> None:
                 else:
                     decision = route(message, client)
                     if decision.intent == Intent.QUERY:
-                        console.print("Memory › Query support will be implemented in Milestone 3.")
+                        show_query(console, query(message, paths=settings.paths, client=client), settings.paths)
                     elif decision.intent == Intent.LINT:
                         console.print("Memory › Lint support will be implemented in Milestone 4.")
                     elif decision.intent == Intent.INGEST and decision.confidence >= 0.7:
                         show_result(console, ingest(message, contributor, paths=settings.paths, client=client))
                     else:
-                        console.print("Memory › Share an operational note, or use /add to explicitly ingest it.")
-            except (IngestError, LLMError, GitError, OSError, ValueError) as error:
+                        console.print("Memory › I can save operational notes and answer questions from the wiki. Type /help for commands.")
+            except (IngestError, QueryError, LLMError, GitError, OSError, ValueError) as error:
                 console.print(f"Memory › {error}", markup=False, style="red")
             console.print()
     except (EOFError, KeyboardInterrupt):

@@ -90,6 +90,13 @@ class RouterDecision(DomainModel):
 class QueryResult(DomainModel):
     answer: NonEmptyText
     pages_used: list[NonEmptyText] = Field(default_factory=list)
+    supported: bool = True
+    has_conflict: bool = False
+
+
+class PageSelection(DomainModel):
+    pages: list[NonEmptyText]
+    reason: NonEmptyText
 
 
 class LintIssue(DomainModel):

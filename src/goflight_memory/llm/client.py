@@ -6,8 +6,8 @@ from typing import TypeVar
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from goflight_memory.agent.prompts import EXTRACTION, ROUTING
-from goflight_memory.core.models import Extraction, RouterDecision
+from goflight_memory.agent.prompts import EXTRACTION, PAGE_SELECTION, QUERY_ANSWER, ROUTING
+from goflight_memory.core.models import Extraction, PageSelection, QueryResult, RouterDecision
 
 Result = TypeVar("Result", bound=BaseModel)
 
@@ -23,7 +23,7 @@ class LLMClient:
 
     def _structured(self, instruction: str, content: str, result_type: type[Result]) -> Result:
         if not self.api_key:
-            raise LLMError("Set OPENAI_API_KEY in .env before adding memory")
+            raise LLMError("Set OPENAI_API_KEY in .env before using the LLM")
         try:
             with OpenAI(api_key=self.api_key, timeout=45, max_retries=0) as client:
                 response = client.responses.parse(
@@ -51,4 +51,16 @@ class LLMClient:
             EXTRACTION + "\nSchema.md:\n" + schema,
             json.dumps({"source_id": source_id, "contributor": contributor, "raw_note": text}),
             Extraction,
+        )
+
+    def select_pages(self, question: str, catalog: dict[str, str], limit: int) -> PageSelection:
+        return self._structured(
+            PAGE_SELECTION,
+            json.dumps({"question": question, "catalog": catalog, "limit": limit}),
+            PageSelection,
+        )
+
+    def answer(self, question: str, pages: dict[str, str]) -> QueryResult:
+        return self._structured(
+            QUERY_ANSWER, json.dumps({"question": question, "wiki_pages": pages}), QueryResult,
         )

@@ -7,13 +7,14 @@ into an inspectable Markdown wiki. The required layers are immutable attributed
 raw sources, a compiled wiki, and the maintenance rules in `schema.md`. Git provides
 real development and memory change history.
 
-Milestone 2 adds real attributed ingest, structured extraction, deterministic wiki
-reconciliation, repository locking, and runtime Git commits to the foundation.
-Query, lint, and human conflict resolution remain **not implemented**.
+Milestone 2 added attributed ingest, structured extraction, deterministic wiki
+reconciliation, repository locking, and runtime Git commits. Milestone 3 adds
+bounded wiki querying with grounded synthesis and citations. Lint and human
+conflict resolution remain **not implemented**.
 
 ## Intended flow
 
-The diagram shows the target flow; query and lint remain future operations.
+The diagram shows the target flow; only lint remains a future operation.
 
 ```mermaid
 flowchart TD
@@ -40,8 +41,8 @@ responsible for deterministic compilation and Markdown parsing, `llm/` owns the 
 | --- | --- |
 | Semantic interpretation | Source identity and unchanged source persistence |
 | Fact extraction | Filesystem operations and path validation |
-| Relevant page selection (Milestone 3) | Provenance validation and conflict persistence |
-| Grounded answer synthesis (Milestone 3) | Locking, Git operations, Markdown links, future lint checks |
+| Relevant page selection | Provenance validation and conflict persistence |
+| Grounded answer synthesis | Locking, Git operations, Markdown links, future lint checks |
 
 Raw sources are the evidence of record. Wiki claims are derived from that evidence
 and must retain source and contributor attribution. The LLM proposes content;
@@ -77,10 +78,28 @@ are rejected. Aircraft `operator` facts generate reciprocal links with evidence.
   is implemented. If HEAD advances ambiguously, do not roll back potentially committed
   files. Git commits require configured identity, stage explicit memory files, and
   exclude unrelated work. Existing staged changes or dirty memory block ingest.
-- **Query:** inspect the index, select pages, follow bounded Markdown links, then
-  synthesize strictly from those wiki pages and return their paths. Unknown facts
-  stay unknown; unresolved conflicts must be exposed. Do not search raw note history.
-- **Lint:** diagnose unresolved conflicts, orphan pages, broken links, and missing
+- **Query:** question → index/page catalog → exact entity-name matching or one LLM
+  selection call → bounded relevant link traversal → grounded LLM synthesis → answer
+  plus validated page citations. **Raw historical sources are not used as the query
+  retrieval corpus**, including for page validation. Query uses a dedicated read
+  path, not ingest's source-validating `load_pages`. There is no vector/embedding
+  retrieval. Inline Markdown links are the knowledge graph.
+  Up to five entity pages and two link hops are read in breadth-first order with
+  deduplication; link relevance uses named targets and a small relationship-type
+  vocabulary. Only catalogued entities can become context. Relative links resolve
+  inside the wiki; external/raw links and symlinks are excluded. Per-page and index
+  byte limits prevent unbounded context, without silently truncating evidence.
+  The existing write-lock file is opened read-only with a shared lock during context
+  collection, then released before synthesis. If absent, no file is created; a writer
+  creating it during reads triggers a retry error. This protects cooperating ingests,
+  not arbitrary manual edits. Queries neither call Git nor modify memory.
+  Pydantic validates selection and synthesis. Python validates citations against
+  actual context, converts unsupported answers to an explicit unknown response, and
+  appends deterministic conflict notices with all values. It rejects a response
+  mentioning only one literal side of a conflict; this is not a full semantic
+  grounding verifier. A bounded selection can miss other relevant pages, and
+  conservative notices can mention unrelated conflicts on consulted pages.
+- **Lint (planned):** diagnose unresolved conflicts, orphan pages, broken links, and missing
   evidence references through deterministic checks; do not silently repair them.
 
 ## Configuration and delivery
@@ -96,10 +115,11 @@ and again against Python-owned source/contributor identity. Canonical field name
 are constrained by the schema and Python. Requests have a 45-second timeout, no SDK
 retries, no tools, and response storage disabled. Natural language is classified
 before mutation; `/add` bypasses routing. Obvious questions/greetings need no API
-call. Query/lint intents receive milestone notices, not memory answers or diagnostics.
+call. Query invokes the read-only query API; lint retains its milestone notice.
 
 Validation covers domain invariants, path resolution, configuration, provider calls
 with mocks, real temporary Git commits, provenance merging, contradictions, retries,
-write/commit failures, process locking, and concurrent ingests. The README supplies
-an opt-in real-API contradiction demo. Later milestones add grounded query (3),
-deterministic lint (4), and broader demo/concurrency hardening (5).
+write/commit failures, process locking, concurrent ingests, query traversal bounds,
+path/citation safety, unknown/conflict propagation, and unchanged files/Git history
+after queries. The README supplies opt-in real-API ingest and query demos. Later
+milestones add deterministic lint (4) and broader demo/concurrency hardening (5).

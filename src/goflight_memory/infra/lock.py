@@ -15,3 +15,22 @@ def repository_lock(path: Path) -> Iterator[None]:
             yield
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def repository_read_lock(path: Path) -> Iterator[None]:
+    """Coordinate with ingest without creating or writing even a lock file."""
+    try:
+        handle = path.open("r")
+    except FileNotFoundError:
+        # A fresh/read-only checkout may never have ingested locally.
+        yield
+        if path.exists():
+            raise ValueError("An ingest started while reading memory; retry the query")
+        return
+    with handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

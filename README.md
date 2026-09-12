@@ -4,9 +4,9 @@ A shared team wiki for humans and AI agents: immutable raw notes → LLM-maintai
 interlinked Markdown → answers grounded in compiled knowledge. Every claim will
 retain source and contributor attribution, including unresolved contradictions.
 
-**Status: Milestone 2 complete — attributed ingestion.** Natural-language notes become
-source-attributed wiki facts and real Git commits. Query (Milestone 3), lint
-(Milestone 4), and human conflict resolution are not implemented.
+**Status: Milestone 3 complete — grounded wiki queries and attributed ingestion.** Notes become
+source-attributed wiki facts and real Git commits; questions receive wiki-grounded
+answers and page citations. Lint (Milestone 4) and human conflict resolution are not implemented.
 
 ## Setup
 
@@ -20,7 +20,7 @@ cp .env.example .env
 ```
 
 Set `OPENAI_API_KEY` in `.env`. `OPENAI_MODEL` defaults to `gpt-4.1-mini` for small
-structured extraction and routing calls. The OpenAI SDK is the sole provider
+structured extraction, routing, page selection, and answer calls. The OpenAI SDK is the sole provider
 dependency; requests use [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 and disable response storage. Normal ingestion sends the note for routing and again
 with the schema for extraction. `/add` skips the routing call. API usage is billable.
@@ -51,9 +51,46 @@ configuration is read from that checkout's `.env`. Keep `.env` and secrets out o
 - `/exit`: exit cleanly; Ctrl-C and EOF also exit.
 
 Enter a meaningful statement about an operator, aircraft, or customer to ingest it.
-Questions receive the Milestone 3 notice. Low-confidence classifications and general
-conversation do not write memory. The core API also supports multiline text without
+Ask a question naturally to query the wiki. Low-confidence classifications and general
+conversation do not write memory. The ingest API also supports multiline text without
 trimming or changing it: `ingest(text, contributor, paths=paths, client=client)`.
+
+## Querying compiled knowledge
+
+`query(question, paths=paths, client=client)` reads **compiled Markdown wiki pages**.
+It does not read raw historical notes, generate embeddings, or use a vector database.
+The index supplies a catalog of entity labels and paths. Exact name matches select
+pages directly; otherwise one structured LLM call selects only catalogued paths.
+Related links are followed when the question names the target or asks about its
+relationship type (e.g. aircraft, operator, or fit). A pet-policy question about an
+operator does not automatically load all linked aircraft.
+
+Traversal is breadth-first, deduplicated, and capped at **5 pages and 2 link hops**.
+Page files are capped at 32 KiB each and the index at 64 KiB; oversized files fail
+clearly rather than being truncated. Raw-source, external, invented, escaping, and
+symlink paths cannot become query context. The parser supports the inline links
+emitted by ingestion, not every Markdown dialect.
+
+One answer call receives only those selected pages. The model must report missing
+information and qualify uncertain comparisons. A structured `supported=false`
+result becomes an explicit "not currently in memory" answer; it cannot emit a
+positive unsupported policy. Python validates cited paths and appends unresolved
+values from the consulted pages even if the model omits them. Answers that mention
+only one literal side of a known conflict are rejected. This is a useful guard,
+not a proof of semantic entailment: faithful synthesis still depends on the LLM.
+Conservative conflict notices may include other unresolved fields on the same page.
+
+`Pages used` lists validated wiki-relative paths (clickable in terminals supporting
+OSC 8 links). The evidence chain remains answer → wiki page → source → contributor.
+Queries never save conclusions, edit memory, or create Git commits. An existing
+ingest lock is opened read-only/shared while collecting context; the answer call
+uses that in-memory snapshot after releasing it. Query does not create a lock file.
+If an ingest starts while reading a checkout with no existing lock, the query fails
+with a retry message. Independent manual edits are not coordinated by this lock.
+
+Retrieval is deliberately bounded, so a broad question can miss facts outside the
+selected pages. Use explicit entity names for predictable discovery; semantic
+aliases and arbitrary relationship wording are not exhaustively handled.
 
 ## Storage, conflicts, and failures
 
@@ -103,15 +140,32 @@ inspect `memory/raw/`, `memory/wiki/aircraft/n123gf.md`,
 Run `git log --oneline` to see both runtime commits separately from development history.
 On a populated memory IDs continue sequentially; exact repeated notes are idempotent.
 
+## Query demo (real API, opt-in)
+
+After the two-source ingest demo, use Sarah's CLI to ingest:
+
+> Acme Corp prefers Challenger-class aircraft and departures from Teterboro or Westchester.
+
+Then launch `goflight-memory --user Wajeeh` and ask:
+
+- What do we know about Atlantic Air?
+- Would Atlantic Air's aircraft fit Acme Corp's known preferences?
+- Does Atlantic Air allow pets?
+- Where is N123GF based?
+
+Expect page citations, a qualified comparison spanning customer/operator/aircraft
+pages, unknown pet policy, and both unresolved home-base values. Check `git status`
+and `git log --oneline` before and after: these questions make no memory changes or commits.
+
 ## Validation and roadmap
 
 ```sh
 python -m unittest discover -s tests -v
 ```
 
-- Tests use mocked extraction plus real temporary Git repositories; no API key/network
-  is required. They include failures, source immutability, provenance, locks, and concurrent writes.
-- Milestone 3: query using page selection, bounded links, and grounded citations.
+- Tests mock LLM calls and use real temporary Git repositories; no API key/network
+  is required. They cover ingestion, retries, concurrent writes, query discovery and
+  bounds, path/citation validation, conflicts, unknown answers, and read-only behavior.
 - Milestone 4: deterministic wiki lint.
 - Milestone 5: fictional samples, a short demo, concurrency checks, and hardening.
 
