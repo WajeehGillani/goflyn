@@ -81,3 +81,18 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - No unresolved conflicts detected in this source's facts.
+
+## source-006
+
+Contributor: John
+Created at: 2026-09-12T14:41:19.420117+00:00
+Source: [source-006](../raw/source-006.md)
+
+Updated:
+
+- [N123GF](aircraft/n123gf.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
