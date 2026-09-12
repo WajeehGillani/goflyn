@@ -234,3 +234,19 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - No unresolved conflicts detected in this source's facts.
+
+## source-014
+
+Contributor: John
+Created at: 2026-09-12T16:25:28.681740+00:00
+Source: [source-014](../raw/source-014.md)
+
+Updated:
+
+- [N111FC](aircraft/n111fc.md)
+- [Falcon Charter](operators/falcon-charter.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.

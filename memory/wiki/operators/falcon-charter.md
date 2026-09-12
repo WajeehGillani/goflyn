@@ -8,9 +8,11 @@ Type: operator
 | --- | --- | --- |
 | contacts | Lisa Morgan &#40;main contact for weekend requests&#41; | [source-011](../../raw/source-011.md) — hassan |
 | minimum&#95;booking&#95;notice | 24 hours | [source-011](../../raw/source-011.md) — hassan |
+| operating&#95;notes | Operates aircraft N111FC | [source-014](../../raw/source-014.md) — John |
 
 ## Related entities
 
+- [N111FC](../aircraft/n111fc.md) — [source-014](../../raw/source-014.md) — John
 - [N222FC](../aircraft/n222fc.md) — [source-013](../../raw/source-013.md) — Sarah
 - [N456FC](../aircraft/n456fc.md) — [source-011](../../raw/source-011.md) — hassan<br>[source-012](../../raw/source-012.md) — Sarah
 
@@ -23,3 +25,4 @@ No unresolved conflicts.
 - [source-011](../../raw/source-011.md) — hassan
 - [source-012](../../raw/source-012.md) — Sarah
 - [source-013](../../raw/source-013.md) — Sarah
+- [source-014](../../raw/source-014.md) — John
