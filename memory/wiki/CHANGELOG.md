@@ -158,3 +158,19 @@ Changes:
 
 - Preserved the raw note; no supported facts were extracted.
 - No unresolved conflicts detected in this source's facts.
+
+## source-011
+
+Contributor: hassan
+Created at: 2026-09-12T15:16:09.039947+00:00
+Source: [source-011](../raw/source-011.md)
+
+Updated:
+
+- [N456FC](aircraft/n456fc.md)
+- [Falcon Charter](operators/falcon-charter.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
