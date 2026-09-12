@@ -9,7 +9,7 @@ from goflight_memory.core.models import Conflict, Entity, Evidence, Fact, WikiFa
 from goflight_memory.wiki.naming import normalized, page_name
 
 TABLE_HEADER = "| Field | Value | Evidence |\n| --- | --- | --- |"
-EVIDENCE = re.compile(r"\[(source-[0-9]{3,})\]\(../../raw/\1\.md\) — (.+)")
+EVIDENCE = re.compile(r"\[(source-[0-9]{3,})\]\(\.\./\.\./raw/\1\.md\) — (.+)")
 
 
 def escape(value: str) -> str:
@@ -134,3 +134,28 @@ def render_index(pages: dict[str, WikiPage]) -> str:
             lines.append("")
             lines.extend(f"- [{escape(page.entity.name)}]({name})" for name, page in sorted(entries))
     return "\n".join(lines) + "\n"
+
+
+def conflict_section(markdown: str) -> str:
+    return markdown.split("\n## Conflicts\n", 1)[1].split("\n## Sources\n", 1)[0]
+
+
+def recorded_conflicts(page: WikiPage, markdown: str) -> list[Conflict]:
+    """Validate generated evidence, but read status from the persisted conflict blocks.
+
+    Resolved records are recognized for diagnostics only; this is not a resolution
+    operation. Missing/inconsistent records are malformed, not inferred conflicts.
+    """
+    for heading in ("## Facts", "## Related entities", "## Conflicts", "## Sources"):
+        if markdown.splitlines().count(heading) != 1:
+            raise ValueError(f"Missing or duplicate section: {heading}")
+    section = conflict_section(markdown)
+    statuses = dict(re.findall(
+        r"^### (conflict-[0-9a-f]{16})\n\nField: [^\n]+\nStatus: (unresolved|resolved)$",
+        section, re.M,
+    ))
+    expected = conflict_section(render_page(page, {page_name(page.entity): page}))
+    if re.sub(r"^Status: resolved$", "Status: unresolved", section, flags=re.M) != expected:
+        raise ValueError("Malformed or inconsistent recorded conflict section")
+    return [conflict.model_copy(update={"status": statuses[conflict.conflict_id]})
+            for conflict in conflicts_for(page)]

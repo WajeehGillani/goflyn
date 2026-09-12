@@ -6,7 +6,8 @@ from rich.text import Text
 from goflight_memory.agent.prompts import HELP, WELCOME
 from goflight_memory.agent.router import route
 from goflight_memory.core.ingest import IngestError, ingest
-from goflight_memory.core.models import IngestResult, Intent, QueryResult
+from goflight_memory.core.lint import LintError, lint
+from goflight_memory.core.models import IngestResult, Intent, LintReport, QueryResult
 from goflight_memory.core.query import QueryError, query
 from goflight_memory.infra.config import Settings
 from goflight_memory.infra.git import GitError
@@ -55,6 +56,20 @@ def show_query(console: Console, result: QueryResult, paths: ProjectPaths) -> No
             console.print(Text.assemble("• ", (name, f"link {uri}")))
 
 
+def show_lint(console: Console, report: LintReport) -> None:
+    console.print("GoFlight Memory Health", style="bold cyan")
+    console.print(f"Pages scanned: {report.pages_scanned}\n"
+                  f"Contradictions: {report.unresolved_conflicts}\n"
+                  f"Orphan pages: {report.orphan_pages}\n"
+                  f"Broken links: {report.broken_links}\n"
+                  f"Missing sources: {report.missing_sources}")
+    for issue in report.issues:
+        console.print(f"\n{issue.severity.upper()} {issue.type} — {issue.page}\n{issue.message}",
+                      markup=False, style="yellow" if issue.severity == "warning" else "red")
+    console.print("\nMemory › Wiki health check passed." if report.is_clean
+                  else f"\nMemory › {report.issue_count} issues require attention; no changes made.")
+
+
 def run_chat(settings: Settings) -> None:
     console = Console(highlight=False)
     console.print("GoFlight Team Memory", style="bold cyan")
@@ -82,6 +97,8 @@ def run_chat(settings: Settings) -> None:
                     console.print(HELP, markup=False)
                 elif command == "/status":
                     show_status(console, contributor, settings.paths)
+                elif command == "/lint":
+                    show_lint(console, lint(paths=settings.paths))
                 elif command == "/add":
                     note = console.input("Note › ")
                     show_result(console, ingest(note, contributor, paths=settings.paths, client=client))
@@ -92,12 +109,12 @@ def run_chat(settings: Settings) -> None:
                     if decision.intent == Intent.QUERY:
                         show_query(console, query(message, paths=settings.paths, client=client), settings.paths)
                     elif decision.intent == Intent.LINT:
-                        console.print("Memory › Lint support will be implemented in Milestone 4.")
+                        show_lint(console, lint(paths=settings.paths))
                     elif decision.intent == Intent.INGEST and decision.confidence >= 0.7:
                         show_result(console, ingest(message, contributor, paths=settings.paths, client=client))
                     else:
-                        console.print("Memory › I can save operational notes and answer questions from the wiki. Type /help for commands.")
-            except (IngestError, QueryError, LLMError, GitError, OSError, ValueError) as error:
+                        console.print("Memory › I can save notes, answer wiki questions, and check memory health. Type /help for commands.")
+            except (IngestError, QueryError, LintError, LLMError, GitError, OSError, ValueError) as error:
                 console.print(f"Memory › {error}", markup=False, style="red")
             console.print()
     except (EOFError, KeyboardInterrupt):

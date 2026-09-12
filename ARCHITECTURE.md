@@ -9,12 +9,12 @@ real development and memory change history.
 
 Milestone 2 added attributed ingest, structured extraction, deterministic wiki
 reconciliation, repository locking, and runtime Git commits. Milestone 3 adds
-bounded wiki querying with grounded synthesis and citations. Lint and human
-conflict resolution remain **not implemented**.
+bounded wiki querying with grounded synthesis and citations. Milestone 4 adds
+deterministic wiki lint. Human conflict resolution remains **not implemented**.
 
 ## Intended flow
 
-The diagram shows the target flow; only lint remains a future operation.
+The diagram shows the implemented flow.
 
 ```mermaid
 flowchart TD
@@ -42,7 +42,7 @@ responsible for deterministic compilation and Markdown parsing, `llm/` owns the 
 | Semantic interpretation | Source identity and unchanged source persistence |
 | Fact extraction | Filesystem operations and path validation |
 | Relevant page selection | Provenance validation and conflict persistence |
-| Grounded answer synthesis | Locking, Git operations, Markdown links, future lint checks |
+| Grounded answer synthesis | Locking, Git operations, Markdown links, lint checks |
 
 Raw sources are the evidence of record. Wiki claims are derived from that evidence
 and must retain source and contributor attribution. The LLM proposes content;
@@ -99,8 +99,34 @@ are rejected. Aircraft `operator` facts generate reciprocal links with evidence.
   mentioning only one literal side of a conflict; this is not a full semantic
   grounding verifier. A bounded selection can miss other relevant pages, and
   conservative notices can mention unrelated conflicts on consulted pages.
-- **Lint (planned):** diagnose unresolved conflicts, orphan pages, broken links, and missing
-  evidence references through deterministic checks; do not silently repair them.
+- **Lint:** Markdown Wiki → Page Scanner → Conflict Parser → Link Graph → Source
+  Reference Validator → Lint Report. **No LLM is required for core lint.**
+  `core/lint.py` scans all `.md` files under the wiki, not just indexed entities,
+  under the existing shared read-lock helper. It never creates the lock, calls Git,
+  writes memory, or calls ingest. `wiki/pages.py` reuses fact parsing and deterministic
+  rendering to validate conflict evidence; recorded statuses are read from Markdown.
+  Only `unresolved` records become contradictions. A missing/inconsistent conflict
+  block becomes a malformed-page issue, not an inferred contradiction. Recognizing
+  a historical `resolved` status is diagnostic only; no resolution authoring exists.
+  The shared `wiki/links.py` resolver normalizes relative links, separates raw/external
+  targets, and limits wiki links to safe Markdown paths. Physical paths reject
+  symlinks. Query still restricts its catalog/context to canonical entity pages;
+  lint also lets documentation participate in navigation.
+  Incoming edges are sets keyed by wiki-relative page names. Zero incoming links
+  from other pages makes an entity orphaned; index/changelog links count, raw-source
+  links and self-links do not. Infrastructure and non-entity docs cannot be orphans.
+  Linked and bare source IDs are validated with the existing source ID/path helpers,
+  then checked for file existence without opening raw notes. Duplicate links and
+  source references are collapsed per originating page. No graph dependency is needed.
+  Discovery and reference checks scale with pages and links, with deterministic sorting.
+  Missing directories and per-page read/parse failures become error issues where
+  possible; the scan continues. Root/lock failures raise `LintError`. The report's
+  category counts and clean status are derived from its issues. Contradictions and
+  orphans are warnings; broken references and invalid state are errors.
+  Limits: generated inline Markdown dialect, no fragment-heading validation, no
+  semantic/temporal inference, no citation-coverage audit, and no full reachability
+  analysis (disconnected cycles can have nonzero incoming counts). Unreadable pages
+  can make the graph incomplete. Locks protect cooperating ingests, not manual edits.
 
 ## Configuration and delivery
 
@@ -114,12 +140,17 @@ The default is `gpt-4.1-mini`; structured Responses output is validated by Pydan
 and again against Python-owned source/contributor identity. Canonical field names
 are constrained by the schema and Python. Requests have a 45-second timeout, no SDK
 retries, no tools, and response storage disabled. Natural language is classified
-before mutation; `/add` bypasses routing. Obvious questions/greetings need no API
-call. Query invokes the read-only query API; lint retains its milestone notice.
+before mutation; `/add` bypasses routing. Obvious questions/greetings and common
+health requests need no routing API call. Lint intent recognition precedes the
+generic question rule; both natural lint and `/lint` call the same read-only core
+function and renderer. The conversational session continues after issues or errors.
 
 Validation covers domain invariants, path resolution, configuration, provider calls
 with mocks, real temporary Git commits, provenance merging, contradictions, retries,
 write/commit failures, process locking, concurrent ingests, query traversal bounds,
 path/citation safety, unknown/conflict propagation, and unchanged files/Git history
-after queries. The README supplies opt-in real-API ingest and query demos. Later
-milestones add deterministic lint (4) and broader demo/concurrency hardening (5).
+after queries/lint. Lint tests include resolved records, orphan graph rules, source
+and link integrity, unsafe paths, malformed files, offline routing, and an
+ingest → lint → query → ingest regression. The README supplies opt-in real-API
+ingest/query demos and an offline lint demo. Milestone 5 remains future work for
+broader demo/concurrency hardening; no Milestone 5 features are implemented here.

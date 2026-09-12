@@ -8,7 +8,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from goflight_memory.core.ingest import IngestError, atomic_write, ingest
-from goflight_memory.core.models import Entity, Extraction, Fact, SourceMetadata
+from goflight_memory.core.lint import lint
+from goflight_memory.core.models import Entity, Extraction, Fact, QueryResult, SourceMetadata
+from goflight_memory.core.query import query
 from goflight_memory.infra.git import GitError, GitRepository
 from goflight_memory.infra.lock import repository_lock
 from goflight_memory.infra.paths import ProjectPaths
@@ -71,6 +73,29 @@ class RepositoryTest(unittest.TestCase):
 
     def add_note(self, text="First note", contributor="John", client=None):
         return ingest(text, contributor, paths=self.paths, client=client or FakeLLM())
+
+    def test_ingest_lint_query_then_ingest_preserves_pipeline(self):
+        self.add_note()
+        self.assertTrue(lint(paths=self.paths).is_clean)
+        self.add_note("Updated policy", "Sarah", FakeLLM(base="Westchester", notice="48 hours"))
+        before, head = self.wiki_snapshot(), self.git.head()
+        report = lint(paths=self.paths)
+        self.assertEqual(report.unresolved_conflicts, 2)
+        self.assertEqual(report.orphan_pages, 0)
+        self.assertEqual(report.broken_links, 0)
+        self.assertEqual(report.missing_sources, 0)
+        class QueryClient:
+            def answer(self, question, pages):
+                return QueryResult(answer="The recorded home base is unresolved.", pages_used=list(pages))
+        result = query("Where is N123GF based?", paths=self.paths, client=QueryClient())
+        self.assertTrue(result.has_conflict)
+        self.assertIn("Teterboro", result.answer)
+        self.assertIn("Westchester", result.answer)
+        self.assertEqual(self.wiki_snapshot(), before)
+        self.assertEqual(self.git.head(), head)
+        final = self.add_note("Another confirmation", "Alex")
+        self.assertEqual(final.source_id, "source-003")
+        self.assertEqual(lint(paths=self.paths).unresolved_conflicts, 2)
 
     def wiki_snapshot(self):
         return {str(p.relative_to(self.paths.wiki_dir)): p.read_bytes()

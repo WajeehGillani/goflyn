@@ -4,11 +4,12 @@ WELCOME = "Shared memory for humans and AI agents"
 HELP = """/help    Show available commands
 /status  Show contributor, counts, and repository paths
 /add     Enter a note to force ingestion (same pipeline as conversation)
+/lint    Check wiki health without changing memory or calling an LLM
 /exit    Exit the application
 
 Type an operational note naturally to add it to team memory.
 Ask questions naturally to read compiled wiki knowledge with page citations.
-Lint arrives in Milestone 4."""
+Say 'Check the memory for problems' to inspect recorded conflicts and references."""
 
 ROUTING = """Classify the user's message. Return structured output only.
 ingest: the user provides meaningful operational knowledge about named aircraft,

@@ -4,9 +4,10 @@ A shared team wiki for humans and AI agents: immutable raw notes → LLM-maintai
 interlinked Markdown → answers grounded in compiled knowledge. Every claim will
 retain source and contributor attribution, including unresolved contradictions.
 
-**Status: Milestone 3 complete — grounded wiki queries and attributed ingestion.** Notes become
+**Status: Milestone 4 complete — deterministic, read-only wiki health checks.** Notes become
 source-attributed wiki facts and real Git commits; questions receive wiki-grounded
-answers and page citations. Lint (Milestone 4) and human conflict resolution are not implemented.
+answers and page citations. Lint diagnoses persisted conflicts and reference integrity.
+Human conflict resolution is not implemented.
 
 ## Setup
 
@@ -48,12 +49,58 @@ configuration is read from that checkout's `.env`. Keep `.env` and secrets out o
 - `/status`: show contributor, raw source count (including pending notes), entity
   page count, unresolved conflict count, and root paths.
 - `/add`: enter a note on the next prompt to force the same ingest pipeline.
+- `/lint`: run the same read-only health check as a natural-language lint request.
 - `/exit`: exit cleanly; Ctrl-C and EOF also exit.
 
 Enter a meaningful statement about an operator, aircraft, or customer to ingest it.
 Ask a question naturally to query the wiki. Low-confidence classifications and general
 conversation do not write memory. The ingest API also supports multiline text without
 trimming or changing it: `ingest(text, contributor, paths=paths, client=client)`.
+
+## Checking wiki health
+
+Ask **“Check the memory for problems.”**, **“Is the wiki healthy?”**, **“Are there
+any contradictions?”**, **“Find problems in the team memory.”**, or **“Show unresolved
+conflicts.”** These requests route locally to the same `lint(paths=paths)` operation
+as `/lint`, without a provider call or API key. Other ambiguous messages may still
+use semantic routing; core lint never uses an LLM.
+
+The scanner discovers Markdown under `memory/wiki`, independently of the index:
+
+- **Contradictions (warning):** validate stored conflict blocks against the structured
+  facts and report those whose recorded status is `unresolved`, including field,
+  values, sources, and contributors. Conflicts originate during ingest; lint does
+  not infer new semantic contradictions. Recorded `resolved` blocks are not counted;
+  this does not add a resolution workflow or change ingest/query's strict format rules.
+- **Orphans (warning):** entity pages under operators/aircraft/customers with no
+  incoming link from another wiki page. Index-only links count, as do changelog and
+  documentation links. Self-links do not count. Infrastructure/documentation pages
+  are scanned for references but are not orphan candidates. Raw-source links are
+  never wiki graph edges.
+- **Broken links (error):** missing or unsafe internal Markdown targets, resolved
+  relative to the originating page using the same resolver as query. External URLs
+  are ignored. Paths outside the wiki and symlink targets are not followed; canonical
+  raw-source links are checked separately.
+- **Missing sources (error):** linked or bare `source-NNN` references whose raw file
+  is missing or unsafe. Repeated references are counted once per source per page.
+  Malformed source IDs/links receive `INVALID_SOURCE` issues. This checks existence,
+  not raw-note meaning or whether every sentence is cited.
+
+`LintReport` contains `pages_scanned`, the four category counts, `issues`, `is_clean`,
+`issue_count`, and `counts_by_type`. Counts are derived from issues to stay consistent.
+Pages scanned includes infrastructure and attempted unreadable Markdown files.
+Broken links are counted once per page/target. Missing/malformed/unreadable state
+produces additional error issues; per-page failures do not stop the other pages.
+Root/lock failures raise `LintError`, which the CLI displays without exiting the REPL.
+
+Lint changes no files, sources, index, changelog, or Git history. It opens an existing
+cooperative lock read-only and never creates one. No repair or conflict resolution
+is performed. It supports the generated inline, untitled Markdown link dialect,
+not full CommonMark (e.g. reference-style links or anchor-heading validation).
+Orphan detection is zero incoming links, not full reachability: a disconnected cycle
+can pass. An incomplete scan can miss incoming links; inspect read/scan errors first.
+Semantic equivalence such as “two days” vs “48 hours”, airport aliases, temporal
+supersession, implied contradictions, and duplicate entities remain out of scope.
 
 ## Querying compiled knowledge
 
@@ -157,6 +204,28 @@ Expect page citations, a qualified comparison spanning customer/operator/aircraf
 pages, unknown pet policy, and both unresolved home-base values. Check `git status`
 and `git log --oneline` before and after: these questions make no memory changes or commits.
 
+## Lint demo (offline)
+
+After the existing ingest demo, run `git status --short` and `git rev-parse HEAD`,
+then launch with the API key deliberately disabled:
+
+```sh
+OPENAI_API_KEY= goflight-memory --user Wajeeh
+```
+
+Enter “Check the memory for problems.”, “Are there any contradictions?”, and `/lint`,
+then `/exit`. All three produce the same report. In the checked-in demo: **5 pages,
+2 contradictions, 0 orphans, 0 broken links, 0 missing sources**. N123GF has Teterboro
+vs Westchester; Atlantic Air has 24 vs 48 hours notice, both attributed to John
+(`source-001`) and Sarah (`source-002`). These are actual ingest-produced records.
+Repeat the Git checks: lint leaves status and HEAD unchanged.
+
+Milestone 4 validation also ran `/lint` against a separate temporary checkout with
+`customers/orphan-demo.md` omitted from its index, a link to a nonexistent aircraft,
+and bare `source-007`: **1 orphan, 1 broken link, 1 missing source**. The controlled
+files were removed afterward; production memory was never changed. Equivalent
+fixtures live in `tests/test_lint.py`, so they can be rerun without an API key.
+
 ## Validation and roadmap
 
 ```sh
@@ -165,8 +234,10 @@ python -m unittest discover -s tests -v
 
 - Tests mock LLM calls and use real temporary Git repositories; no API key/network
   is required. They cover ingestion, retries, concurrent writes, query discovery and
-  bounds, path/citation validation, conflicts, unknown answers, and read-only behavior.
-- Milestone 4: deterministic wiki lint.
+  bounds, path/citation validation, conflicts, unknown answers, lint routing and all
+  four integrity checks, resolved records, malformed files, and read-only behavior.
+  An integration regression runs ingest → lint → query → ingest in a temporary repository.
+- Milestone 4: complete; deterministic wiki lint, with no new dependencies.
 - Milestone 5: fictional samples, a short demo, concurrency checks, and hardening.
 
 See [schema.md](schema.md) for page rules and [ARCHITECTURE.md](ARCHITECTURE.md) for

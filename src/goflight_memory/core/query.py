@@ -9,7 +9,7 @@ from goflight_memory.infra.paths import ProjectPaths
 from goflight_memory.llm.client import LLMClient, LLMError
 from goflight_memory.wiki.links import ENTITY_PAGE, extract_links, resolve_wiki_link, wiki_file
 from goflight_memory.wiki.naming import normalized, page_name
-from goflight_memory.wiki.pages import conflicts_for, parse_page, render_page
+from goflight_memory.wiki.pages import conflict_section, conflicts_for, parse_page, render_page
 
 MAX_PAGES = 5
 MAX_LINK_DEPTH = 2
@@ -78,8 +78,6 @@ def checked_page(name: str, text: str) -> WikiPage:
     if page_name(page.entity) != name:
         raise ValueError(f"Entity identity does not match wiki path: {name}")
     # Check the visible conflict block against facts without reading any raw source.
-    def conflict_section(markdown: str) -> str:
-        return markdown.split("\n## Conflicts\n", 1)[1].split("\n## Sources\n", 1)[0]
     if conflict_section(text) != conflict_section(render_page(page, {name: page})):
         raise ValueError(f"Malformed or inconsistent conflict section in {name}")
     return page

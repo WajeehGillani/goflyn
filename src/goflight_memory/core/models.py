@@ -1,5 +1,6 @@
 """Small validated records shared by memory operations."""
 
+from collections import Counter
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
@@ -9,6 +10,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    computed_field,
     model_validator,
 )
 
@@ -104,6 +106,46 @@ class LintIssue(DomainModel):
     page: NonEmptyText
     message: NonEmptyText
     severity: Literal["info", "warning", "error"]
+
+
+class LintReport(DomainModel):
+    pages_scanned: int = Field(ge=0)
+    issues: list[LintIssue] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def counts_by_type(self) -> dict[str, int]:
+        return dict(sorted(Counter(issue.type for issue in self.issues).items()))
+
+    @computed_field
+    @property
+    def unresolved_conflicts(self) -> int:
+        return self.counts_by_type.get("CONTRADICTION", 0)
+
+    @computed_field
+    @property
+    def orphan_pages(self) -> int:
+        return self.counts_by_type.get("ORPHAN_PAGE", 0)
+
+    @computed_field
+    @property
+    def broken_links(self) -> int:
+        return self.counts_by_type.get("BROKEN_LINK", 0)
+
+    @computed_field
+    @property
+    def missing_sources(self) -> int:
+        return self.counts_by_type.get("MISSING_SOURCE", 0)
+
+    @computed_field
+    @property
+    def issue_count(self) -> int:
+        return len(self.issues)
+
+    @computed_field
+    @property
+    def is_clean(self) -> bool:
+        return not self.issues
 
 
 class Extraction(DomainModel):
