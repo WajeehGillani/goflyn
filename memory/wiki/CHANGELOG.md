@@ -190,3 +190,17 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - Unresolved conflict: N456FC.home&#95;base (conflict-2c5cf0dcf7fbb76f).
+
+## Conflict Resolution — conflict-477276a53cd8f9e2
+
+Entity: [Atlantic Air](operators/atlantic-air.md)
+Field: minimum&#95;booking&#95;notice
+Resolution: 24 hours
+Resolved by: Sarah
+Reason: its valid
+Resolved at: 2026-09-12T15:59:05.367307+00:00
+
+Evidence reviewed:
+
+- [source-001](../raw/source-001.md) — John
+- [source-002](../raw/source-002.md) — Sarah
