@@ -66,3 +66,18 @@ Changes:
 
 - Added new facts or supporting evidence; retained previous evidence.
 - No unresolved conflicts detected in this source's facts.
+
+## source-005
+
+Contributor: Sarah
+Created at: 2026-09-12T14:41:15.108977+00:00
+Source: [source-005](../raw/source-005.md)
+
+Updated:
+
+- [Northstar Capital](customers/northstar-capital.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
