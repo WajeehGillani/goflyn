@@ -7,6 +7,7 @@ Type: operator
 | Field | Value | Evidence |
 | --- | --- | --- |
 | minimum&#95;booking&#95;notice | 24 hours | [source-001](../../raw/source-001.md) — John |
+| minimum&#95;booking&#95;notice | 48 hours | [source-002](../../raw/source-002.md) — Sarah |
 
 ## Related entities
 
@@ -14,8 +15,16 @@ Type: operator
 
 ## Conflicts
 
-No unresolved conflicts.
+### conflict-477276a53cd8f9e2
+
+Field: minimum&#95;booking&#95;notice
+Status: unresolved
+
+- **24 hours** — [source-001](../../raw/source-001.md) — John
+- **48 hours** — [source-002](../../raw/source-002.md) — Sarah
+
 
 ## Sources
 
 - [source-001](../../raw/source-001.md) — John
+- [source-002](../../raw/source-002.md) — Sarah
