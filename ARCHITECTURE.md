@@ -1,156 +1,71 @@
 # Architecture
 
-## Purpose and scope
-
-GoFlight Team Memory compiles shared operator, aircraft, and customer knowledge
-into an inspectable Markdown wiki. The required layers are immutable attributed
-raw sources, a compiled wiki, and the maintenance rules in `schema.md`. Git provides
-real development and memory change history.
-
-Milestone 2 added attributed ingest, structured extraction, deterministic wiki
-reconciliation, repository locking, and runtime Git commits. Milestone 3 adds
-bounded wiki querying with grounded synthesis and citations. Milestone 4 adds
-deterministic wiki lint. Human conflict resolution remains **not implemented**.
-
-## Intended flow
-
-The diagram shows the implemented flow.
+One local Python application compiles attributed team notes into an inspectable
+Markdown wiki. Git holds real development and ingest history; no vector database,
+chunk-based RAG, SQL, or agent orchestration framework is used.
 
 ```mermaid
-flowchart TD
-    U[Human / Agent] --> C[Conversational CLI]
-    C --> R[Intent Router]
+flowchart LR
+    U[Human / agent] --> C[Conversational CLI]
+    C --> R[Intent router]
     R --> I[Ingest]
     R --> Q[Query]
     R --> L[Lint]
-    I --> S[Immutable Raw Sources]
-    I --> W[Markdown Wiki]
-    I --> G[Git History]
-    Q --> W
-    L --> W
+    I --> S[Immutable raw sources]
+    I --> W[Markdown wiki]
+    I --> G[Git commit]
+    W --> Q
+    W --> L
+    Q --> A[Answer + pages used]
+    L --> H[Health report]
 ```
 
-All components run in one local Python application against one shared Git
-checkout. `agent/` owns conversation, `core/` owns validated records, `wiki/` is
-responsible for deterministic compilation and Markdown parsing, `llm/` owns the OpenAI adapter, and
-`infra/` owns paths and configuration. No orchestration framework is needed.
+## Storage and trust boundary
 
-## Trust boundary and invariants
+`memory/raw/source-NNN.md` stores exact note text with contributor, type, ID, and UTC
+timestamp. `memory/wiki/{operators,aircraft,customers}/` stores fact/evidence tables,
+related links, conflicts, and sources; `index.md` and `CHANGELOG.md` provide navigation
+and attributed summaries. `schema.md` defines supported fields. No hidden state store.
 
-| LLM responsibilities | Deterministic Python responsibilities |
-| --- | --- |
-| Semantic interpretation | Source identity and unchanged source persistence |
-| Fact extraction | Filesystem operations and path validation |
-| Relevant page selection | Provenance validation and conflict persistence |
-| Grounded answer synthesis | Locking, Git operations, Markdown links, lint checks |
+The LLM handles ambiguous routing, structured extraction, optional page selection,
+and grounded synthesis. Python validates schema/provenance, owns IDs and safe paths,
+reconciles facts, preserves conflicts, writes files, locks, commits, and lints.
+Provider responses are proposals, not trusted instructions. Structured output does
+not guarantee semantic correctness. Only `llm/client.py` imports the provider SDK.
 
-Raw sources are the evidence of record. Wiki claims are derived from that evidence
-and must retain source and contributor attribution. The LLM proposes content;
-Python validates it before writing. Source metadata requires a timezone and disallows
-assignment. UTF-8 raw source files have JSON-quoted YAML scalar metadata and an
-unchanged note body. Sequential source IDs are allocated and exclusively created under lock.
+## Operations
 
-Extracted facts represent one textual value and one source/contributor pair.
-Wiki fact rows aggregate matching evidence. Values compare with Unicode NFKC,
-case folding, and collapsed whitespace. Different values for one entity/field create
-an unresolved conflict with a stable hash ID and all evidence. There is no semantic
-conflict resolution; multi-valued fields can conservatively produce false positives.
+- **Ingest:** exclusive lock → preserve raw text → LLM extraction with schema → validate
+  attribution → reconcile facts → render wiki/index/changelog → scoped Git commit.
+  Matching normalized values merge evidence; differing values retain both sides and
+  produce stable unresolved records. Aircraft/operator facts create reciprocal links.
+  Exact same-user/text retries return the original commit. Caught failures restore
+  wiki/staging and keep a saved source pending for retry. Dirty memory and unrelated
+  staged work block ingestion. No manual edits are silently discarded.
+- **Query:** index catalog → exact name match or structured page selection → relevant
+  breadth-first traversal → LLM answer → validated citations and conflict notices.
+  Only catalogued wiki pages become context; raw notes never do. Limits: 5 pages,
+  2 hops, 32 KiB/page, 64 KiB/index. Unsupported answers become unknown; literal
+  one-sided conflict answers fail safely. Query never calls Git or writes memory.
+- **Lint:** Markdown scanner → recorded-conflict parser → dictionary/set link graph →
+  source-reference validation → report. No LLM or writes. Unresolved records and zero
+  incoming-link entities are warnings; broken references and malformed state are errors.
+  Index/changelog links count; raw/self-links do not. Infrastructure cannot be orphaned.
+  Per-page errors preserve the remaining scan; root/lock failures are explicit.
 
-Markdown tables are the authoritative wiki representation; no JSON sidecar or hidden
-database exists. Python escapes textual data, parses the known table format, and
-re-renders deterministically. Unsupported manual page/index edits block ingestion
-instead of being lost. Entity filenames use ASCII slugs; ambiguous slug collisions
-are rejected. Aircraft `operator` facts generate reciprocal links with evidence.
+## Concurrency, delivery, and limits
 
-## Operations and failure handling
+`fcntl.flock` serializes cooperating ingests sharing one repository/filesystem,
+including provider calls and Git. Query/lint/status share read locks without creating
+lock files; query releases its lock before synthesis. Independent distributed nodes
+and manual edits are not protected. Power loss/SIGKILL may need manual recovery;
+atomic per-file replacement is not a crash-safe multi-file transaction.
 
-- **Ingest:** acquire repository write lock → read latest state → preserve source →
-  extract/compare facts → validate and persist evidence/conflicts → update wiki,
-  index, and changelog → Git commit → release lock. Every writer must cooperate.
-  This protects only a single shared filesystem environment, not distributed writers.
-  The POSIX `flock` lock file is retained and ignored by Git. Compile every page in
-  memory before writing; replace each changed file with a same-directory temporary
-  file. Snapshot originals and restore only transaction-owned files/staging on caught
-  failures. Preserve a fully written raw note as pending for an exact-text/same-user
-  retry. Pending raw notes block other input; committed exact retries return the
-  existing commit. This is intentional deduplication, not semantic similarity search.
-  SIGKILL/power loss can leave dirty state requiring manual review; no crash journal
-  is implemented. If HEAD advances ambiguously, do not roll back potentially committed
-  files. Git commits require configured identity, stage explicit memory files, and
-  exclude unrelated work. Existing staged changes or dirty memory block ingest.
-- **Query:** question → index/page catalog → exact entity-name matching or one LLM
-  selection call → bounded relevant link traversal → grounded LLM synthesis → answer
-  plus validated page citations. **Raw historical sources are not used as the query
-  retrieval corpus**, including for page validation. Query uses a dedicated read
-  path, not ingest's source-validating `load_pages`. There is no vector/embedding
-  retrieval. Inline Markdown links are the knowledge graph.
-  Up to five entity pages and two link hops are read in breadth-first order with
-  deduplication; link relevance uses named targets and a small relationship-type
-  vocabulary. Only catalogued entities can become context. Relative links resolve
-  inside the wiki; external/raw links and symlinks are excluded. Per-page and index
-  byte limits prevent unbounded context, without silently truncating evidence.
-  The existing write-lock file is opened read-only with a shared lock during context
-  collection, then released before synthesis. If absent, no file is created; a writer
-  creating it during reads triggers a retry error. This protects cooperating ingests,
-  not arbitrary manual edits. Queries neither call Git nor modify memory.
-  Pydantic validates selection and synthesis. Python validates citations against
-  actual context, converts unsupported answers to an explicit unknown response, and
-  appends deterministic conflict notices with all values. It rejects a response
-  mentioning only one literal side of a conflict; this is not a full semantic
-  grounding verifier. A bounded selection can miss other relevant pages, and
-  conservative notices can mention unrelated conflicts on consulted pages.
-- **Lint:** Markdown Wiki → Page Scanner → Conflict Parser → Link Graph → Source
-  Reference Validator → Lint Report. **No LLM is required for core lint.**
-  `core/lint.py` scans all `.md` files under the wiki, not just indexed entities,
-  under the existing shared read-lock helper. It never creates the lock, calls Git,
-  writes memory, or calls ingest. `wiki/pages.py` reuses fact parsing and deterministic
-  rendering to validate conflict evidence; recorded statuses are read from Markdown.
-  Only `unresolved` records become contradictions. A missing/inconsistent conflict
-  block becomes a malformed-page issue, not an inferred contradiction. Recognizing
-  a historical `resolved` status is diagnostic only; no resolution authoring exists.
-  The shared `wiki/links.py` resolver normalizes relative links, separates raw/external
-  targets, and limits wiki links to safe Markdown paths. Physical paths reject
-  symlinks. Query still restricts its catalog/context to canonical entity pages;
-  lint also lets documentation participate in navigation.
-  Incoming edges are sets keyed by wiki-relative page names. Zero incoming links
-  from other pages makes an entity orphaned; index/changelog links count, raw-source
-  links and self-links do not. Infrastructure and non-entity docs cannot be orphans.
-  Linked and bare source IDs are validated with the existing source ID/path helpers,
-  then checked for file existence without opening raw notes. Duplicate links and
-  source references are collapsed per originating page. No graph dependency is needed.
-  Discovery and reference checks scale with pages and links, with deterministic sorting.
-  Missing directories and per-page read/parse failures become error issues where
-  possible; the scan continues. Root/lock failures raise `LintError`. The report's
-  category counts and clean status are derived from its issues. Contradictions and
-  orphans are warnings; broken references and invalid state are errors.
-  Limits: generated inline Markdown dialect, no fragment-heading validation, no
-  semantic/temporal inference, no citation-coverage audit, and no full reachability
-  analysis (disconnected cycles can have nonzero incoming counts). Unreadable pages
-  can make the graph incomplete. Locks protect cooperating ingests, not manual edits.
+`agent/` owns UX, `core/` operations/models, `wiki/` compilation/parsing, `infra/`
+paths/configuration/locking/Git. `demo.py` initializes only a new isolated directory
+and feeds fictional notes through production ingest; it never resets existing data.
 
-## Configuration and delivery
-
-The supported install is editable from a source checkout with Python 3.12+.
-Paths default to that checkout, independent of the launch directory. An exported
-`GOFLIGHT_ROOT` selects another checkout before its `.env` is read. Shell environment
-values take precedence over `.env`; `--user` takes precedence over `GOFLIGHT_USER`.
-Contributor identity is a user-supplied label, with authentication out of scope.
-`OPENAI_API_KEY` and optional `OPENAI_MODEL` configure the sole OpenAI adapter.
-The default is `gpt-4.1-mini`; structured Responses output is validated by Pydantic
-and again against Python-owned source/contributor identity. Canonical field names
-are constrained by the schema and Python. Requests have a 45-second timeout, no SDK
-retries, no tools, and response storage disabled. Natural language is classified
-before mutation; `/add` bypasses routing. Obvious questions/greetings and common
-health requests need no routing API call. Lint intent recognition precedes the
-generic question rule; both natural lint and `/lint` call the same read-only core
-function and renderer. The conversational session continues after issues or errors.
-
-Validation covers domain invariants, path resolution, configuration, provider calls
-with mocks, real temporary Git commits, provenance merging, contradictions, retries,
-write/commit failures, process locking, concurrent ingests, query traversal bounds,
-path/citation safety, unknown/conflict propagation, and unchanged files/Git history
-after queries/lint. Lint tests include resolved records, orphan graph rules, source
-and link integrity, unsafe paths, malformed files, offline routing, and an
-ingest → lint → query → ingest regression. The README supplies opt-in real-API
-ingest/query demos and an offline lint demo. Milestone 5 remains future work for
-broader demo/concurrency hardening; no Milestone 5 features are implemented here.
+Limits: whole-wiki reconciliation, bounded query, generated Markdown dialect, no
+semantic/temporal resolution, full graph reachability, or grounding proof. Contributor
+labels are unauthenticated. No UI, MCP, deployment, or human-resolution workflow.
+See the [validation record](docs/VALIDATION.md) for demos and retained extraction errors.

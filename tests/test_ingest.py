@@ -2,6 +2,7 @@ import subprocess
 import sys
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -305,15 +306,39 @@ class RepositoryTest(unittest.TestCase):
         self.assertFalse(list((self.paths.wiki_dir / "operators").glob("*.md")))
 
     def test_concurrent_ingests_read_latest_state_and_keep_both_updates(self):
+        entered, release, second_attempting, second_entered = (Event() for _ in range(4))
+        class FirstClient(FakeLLM):
+            def extract(self, *args):
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError("Test did not release first writer")
+                return super().extract(*args)
+        class SecondClient(FakeLLM):
+            def extract(self, *args):
+                second_entered.set()
+                return super().extract(*args)
+        def second_ingest():
+            second_attempting.set()
+            return self.add_note("Second", "Sarah", SecondClient("Westchester", "48 hours"))
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = [
-                executor.submit(self.add_note, "First", "John", FakeLLM()),
-                executor.submit(self.add_note, "Second", "Sarah", FakeLLM("Westchester", "48 hours")),
-            ]
+            futures = [executor.submit(self.add_note, "First", "John", FirstClient())]
+            try:
+                self.assertTrue(entered.wait(5))  # A holds the transaction lock inside extraction.
+                futures.append(executor.submit(second_ingest))
+                self.assertTrue(second_attempting.wait(5))
+                self.assertFalse(second_entered.wait(0.2))  # B cannot mutate/extract yet.
+                self.assertFalse(futures[1].done())
+            finally:
+                release.set()
             results = [future.result(timeout=15) for future in futures]
+        self.assertTrue(second_entered.is_set())
         self.assertEqual({r.source_id for r in results}, {"source-001", "source-002"})
         self.assertEqual(len(conflicts_for(self.aircraft())), 1)
         self.assertEqual(self.git.run("rev-list", "--count", "HEAD"), "3")
+        history = self.git.run("log", "--format=%s")
+        self.assertIn("ingest source-001 by John", history)
+        self.assertIn("ingest source-002 by Sarah", history)
+        self.assertEqual({e.contributor for fact in self.aircraft().facts for e in fact.evidence}, {"John", "Sarah"})
         self.assertEqual(self.git.run("status", "--porcelain"), "")
 
     def test_lock_blocks_another_process_and_releases(self):

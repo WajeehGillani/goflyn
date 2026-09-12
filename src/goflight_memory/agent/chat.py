@@ -11,17 +11,19 @@ from goflight_memory.core.models import IngestResult, Intent, LintReport, QueryR
 from goflight_memory.core.query import QueryError, query
 from goflight_memory.infra.config import Settings
 from goflight_memory.infra.git import GitError
-from goflight_memory.infra.lock import repository_lock
+from goflight_memory.infra.lock import repository_read_lock
 from goflight_memory.infra.paths import ProjectPaths
 from goflight_memory.llm.client import LLMClient, LLMError
+from goflight_memory.wiki.links import wiki_file
 
 
 def show_status(console: Console, contributor: str, paths: ProjectPaths) -> None:
-    with repository_lock(paths.memory_path(".write.lock")):
+    with repository_read_lock(paths.memory_path(".write.lock")):
         source_count = sum(path.is_file() for path in paths.memory_path("raw").glob("source-*.md"))
         pages = [file for directory in ("operators", "aircraft", "customers")
                  for file in paths.memory_path(f"wiki/{directory}").glob("*.md")]
-        conflicts = sum(file.read_text(encoding="utf-8").splitlines().count("Status: unresolved") for file in pages)
+        conflicts = sum(wiki_file(paths, file.relative_to(paths.wiki_dir).as_posix())
+                        .read_text(encoding="utf-8").splitlines().count("Status: unresolved") for file in pages)
     console.print(
         f"Contributor: {contributor}\n"
         f"Raw sources: {source_count}\n"

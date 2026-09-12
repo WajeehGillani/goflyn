@@ -1,0 +1,38 @@
+[
+  {
+    "contributor": "John",
+    "text": "I spoke with Atlantic Air. They operate N123GF, which is a Challenger 350 based at Teterboro. They require 24 hours notice for bookings."
+  },
+  {
+    "contributor": "Sarah",
+    "text": "Atlantic Air told me N123GF is now based at Westchester and they require 48 hours notice."
+  },
+  {
+    "contributor": "Sarah",
+    "text": "Acme Corp prefers Challenger-class aircraft and departures from Teterboro or Westchester."
+  },
+  {
+    "contributor": "John",
+    "text": "SkyBridge Aviation operates N777SB, a Gulfstream G450 based at White Plains. SkyBridge Aviation requires 72 hours booking notice."
+  },
+  {
+    "contributor": "Sarah",
+    "text": "Northstar Capital prefers Gulfstream aircraft and departures from White Plains. Northstar Capital prefers a quiet cabin for working during flights."
+  },
+  {
+    "contributor": "John",
+    "text": "N123GF is available for charter on October 14 and 15, 2026, subject to operator confirmation."
+  },
+  {
+    "contributor": "Sarah",
+    "text": "N777SB is available for charter on October 16, 2026, subject to operator confirmation. SkyBridge Aviation requires the passenger manifest before booking confirmation."
+  },
+  {
+    "contributor": "Sarah",
+    "text": "Acme Corp has successfully used Atlantic Air for a previous charter. Acme Corp prefers vegetarian catering."
+  },
+  {
+    "contributor": "John",
+    "text": "Atlantic Air asks the booking team to reconfirm aircraft availability before promising a departure time."
+  }
+]

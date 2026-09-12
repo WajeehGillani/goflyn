@@ -74,6 +74,10 @@ Use only these canonical field names:
 operator: contacts, minimum_booking_notice, booking_requirements, operating_notes
 aircraft: type, operator, home_base, availability, operating_notes
 customer: aircraft_preferences, airport_preferences, travel_preferences, operating_notes
+Customer aircraft_preferences means aircraft types/classes only. Catering, cabin
+comfort, and working in flight belong in travel_preferences, never aircraft_preferences.
+Record past customer trips under customer.operating_notes. Keep explicitly combined
+airport alternatives in one airport_preferences value; they are not contradictory updates.
 Represent an operator's aircraft fleet using aircraft.operator = operator name;
 include both entities. Do not emit an operator.aircraft field. Do not infer a booking
 notice for an aircraft when the note assigns it to the operator.

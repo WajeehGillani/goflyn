@@ -1,244 +1,222 @@
 # GoFlight Team Memory
 
-A shared team wiki for humans and AI agents: immutable raw notes → LLM-maintained,
-interlinked Markdown → answers grounded in compiled knowledge. Every claim will
-retain source and contributor attribution, including unresolved contradictions.
+A small shared-memory prototype where raw team notes are compiled by an LLM into
+an attributed, interlinked Markdown wiki that humans and AI agents can query.
+No vector database or chunk-based RAG is used. **Milestones 1–5 are complete.**
 
-**Status: Milestone 4 complete — deterministic, read-only wiki health checks.** Notes become
-source-attributed wiki facts and real Git commits; questions receive wiki-grounded
-answers and page citations. Lint diagnoses persisted conflicts and reference integrity.
-Human conflict resolution is not implemented.
+## What it does
 
-## Setup
+- Ingests immutable notes with contributor attribution and real Git commits.
+- Maintains operator, aircraft, and customer pages according to [schema.md](schema.md).
+- Preserves conflicting values and evidence; never silently picks the newest.
+- Answers from compiled wiki pages and returns the pages used.
+- Lints conflicts, orphans, broken links, and missing sources without an LLM or writes.
 
-Requires Python 3.12+, Git, and macOS/Linux (the lock uses `fcntl.flock`). From this checkout:
+## Architecture
+
+Conversation → intent router → `ingest`, `query`, or `lint`. The LLM interprets text;
+Python owns paths, provenance, reconciliation, locking, Git, and lint. See the
+[one-page architecture](ARCHITECTURE.md) and [live demo script](DEMO_SCRIPT.md).
+
+## Why Markdown + Git
+
+Memory is readable without this app, citations are inspectable, and every ingest has
+a reviewable diff. Raw notes are evidence; wiki pages are compiled knowledge. There
+is no hidden database, embedding index, or heavyweight agent framework.
+
+## Requirements and setup
+
+Python **3.12+**, Git, macOS/Linux (`fcntl.flock`), and an OpenAI API key for new
+ingestion or nonempty-wiki answers. API calls are billable. From this source checkout:
 
 ```sh
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-cp .env.example .env
-```
-
-Set `OPENAI_API_KEY` in `.env`. `OPENAI_MODEL` defaults to `gpt-4.1-mini` for small
-structured extraction, routing, page selection, and answer calls. The OpenAI SDK is the sole provider
-dependency; requests use [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
-and disable response storage. Normal ingestion sends the note for routing and again
-with the schema for extraction. `/add` skips the routing call. API usage is billable.
-
-Configure a Git author/committer if one is not already set:
-
-```sh
+cp -n .env.example .env
 git config user.name "Your Name"
 git config user.email "you@example.com"
-goflight-memory --user "John"
 ```
 
-Or launch `goflight-memory` and enter a contributor name. Optional `GOFLIGHT_USER`
-in `.env` supplies a default. Shell variables override `.env`; `--user` overrides
-the configured contributor. Each note is independent; conversational context is
-not inferred from earlier messages.
+Edit `.env` to set `OPENAI_API_KEY`. Never commit it. `cp -n` preserves an existing
+configuration. The supported install is editable from a Git source checkout.
+If `python3.12` is not on PATH, substitute the absolute path to your Python 3.12+
+interpreter in the first command; the default macOS `python3` may be too old.
 
-The editable install finds this checkout even when launched elsewhere. To select
-another checkout, export `GOFLIGHT_ROOT=/absolute/path/to/checkout` before launch;
-configuration is read from that checkout's `.env`. Keep `.env` and secrets out of Git.
+## Environment variables
 
-## Current shell
+| Variable | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | Required for provider calls; never printed by the app |
+| `OPENAI_MODEL` | Defaults to `gpt-4.1-mini` |
+| `GOFLIGHT_USER` | Optional contributor label; `--user` overrides it |
+| `GOFLIGHT_ROOT` | Export before launch to select another memory repository |
 
-- `/help`: show commands and current limitations.
-- `/status`: show contributor, raw source count (including pending notes), entity
-  page count, unresolved conflict count, and root paths.
-- `/add`: enter a note on the next prompt to force the same ingest pipeline.
-- `/lint`: run the same read-only health check as a natural-language lint request.
-- `/exit`: exit cleanly; Ctrl-C and EOF also exit.
+Shell variables override `.env`. A selected repository supplies its own `.env`.
+The fresh-demo loader deliberately does **not** copy API keys or `.env` files.
 
-Enter a meaningful statement about an operator, aircraft, or customer to ingest it.
-Ask a question naturally to query the wiki. Low-confidence classifications and general
-conversation do not write memory. The ingest API also supports multiline text without
-trimming or changing it: `ingest(text, contributor, paths=paths, client=client)`.
-
-## Checking wiki health
-
-Ask **“Check the memory for problems.”**, **“Is the wiki healthy?”**, **“Are there
-any contradictions?”**, **“Find problems in the team memory.”**, or **“Show unresolved
-conflicts.”** These requests route locally to the same `lint(paths=paths)` operation
-as `/lint`, without a provider call or API key. Other ambiguous messages may still
-use semantic routing; core lint never uses an LLM.
-
-The scanner discovers Markdown under `memory/wiki`, independently of the index:
-
-- **Contradictions (warning):** validate stored conflict blocks against the structured
-  facts and report those whose recorded status is `unresolved`, including field,
-  values, sources, and contributors. Conflicts originate during ingest; lint does
-  not infer new semantic contradictions. Recorded `resolved` blocks are not counted;
-  this does not add a resolution workflow or change ingest/query's strict format rules.
-- **Orphans (warning):** entity pages under operators/aircraft/customers with no
-  incoming link from another wiki page. Index-only links count, as do changelog and
-  documentation links. Self-links do not count. Infrastructure/documentation pages
-  are scanned for references but are not orphan candidates. Raw-source links are
-  never wiki graph edges.
-- **Broken links (error):** missing or unsafe internal Markdown targets, resolved
-  relative to the originating page using the same resolver as query. External URLs
-  are ignored. Paths outside the wiki and symlink targets are not followed; canonical
-  raw-source links are checked separately.
-- **Missing sources (error):** linked or bare `source-NNN` references whose raw file
-  is missing or unsafe. Repeated references are counted once per source per page.
-  Malformed source IDs/links receive `INVALID_SOURCE` issues. This checks existence,
-  not raw-note meaning or whether every sentence is cited.
-
-`LintReport` contains `pages_scanned`, the four category counts, `issues`, `is_clean`,
-`issue_count`, and `counts_by_type`. Counts are derived from issues to stay consistent.
-Pages scanned includes infrastructure and attempted unreadable Markdown files.
-Broken links are counted once per page/target. Missing/malformed/unreadable state
-produces additional error issues; per-page failures do not stop the other pages.
-Root/lock failures raise `LintError`, which the CLI displays without exiting the REPL.
-
-Lint changes no files, sources, index, changelog, or Git history. It opens an existing
-cooperative lock read-only and never creates one. No repair or conflict resolution
-is performed. It supports the generated inline, untitled Markdown link dialect,
-not full CommonMark (e.g. reference-style links or anchor-heading validation).
-Orphan detection is zero incoming links, not full reachability: a disconnected cycle
-can pass. An incomplete scan can miss incoming links; inspect read/scan errors first.
-Semantic equivalence such as “two days” vs “48 hours”, airport aliases, temporal
-supersession, implied contradictions, and duplicate entities remain out of scope.
-
-## Querying compiled knowledge
-
-`query(question, paths=paths, client=client)` reads **compiled Markdown wiki pages**.
-It does not read raw historical notes, generate embeddings, or use a vector database.
-The index supplies a catalog of entity labels and paths. Exact name matches select
-pages directly; otherwise one structured LLM call selects only catalogued paths.
-Related links are followed when the question names the target or asks about its
-relationship type (e.g. aircraft, operator, or fit). A pet-policy question about an
-operator does not automatically load all linked aircraft.
-
-Traversal is breadth-first, deduplicated, and capped at **5 pages and 2 link hops**.
-Page files are capped at 32 KiB each and the index at 64 KiB; oversized files fail
-clearly rather than being truncated. Raw-source, external, invented, escaping, and
-symlink paths cannot become query context. The parser supports the inline links
-emitted by ingestion, not every Markdown dialect.
-
-One answer call receives only those selected pages. The model must report missing
-information and qualify uncertain comparisons. A structured `supported=false`
-result becomes an explicit "not currently in memory" answer; it cannot emit a
-positive unsupported policy. Python validates cited paths and appends unresolved
-values from the consulted pages even if the model omits them. Answers that mention
-only one literal side of a known conflict are rejected. This is a useful guard,
-not a proof of semantic entailment: faithful synthesis still depends on the LLM.
-Conservative conflict notices may include other unresolved fields on the same page.
-
-`Pages used` lists validated wiki-relative paths (clickable in terminals supporting
-OSC 8 links). The evidence chain remains answer → wiki page → source → contributor.
-Queries never save conclusions, edit memory, or create Git commits. An existing
-ingest lock is opened read-only/shared while collecting context; the answer call
-uses that in-memory snapshot after releasing it. Query does not create a lock file.
-If an ingest starts while reading a checkout with no existing lock, the query fails
-with a retry message. Independent manual edits are not coordinated by this lock.
-
-Retrieval is deliberately bounded, so a broad question can miss facts outside the
-selected pages. Use explicit entity names for predictable discovery; semantic
-aliases and arbitrary relationship wording are not exhaustively handled.
-
-## Storage, conflicts, and failures
-
-Raw files are `memory/raw/source-001.md`, etc. Each has a quoted metadata header
-and the exact original note body. Python allocates IDs under the repository lock
-and uses exclusive creation. Wiki pages contain readable fact tables, relative
-entity links, evidence references, and visible unresolved conflict sections.
-Matching values merge evidence. Different values for the same entity/field preserve
-both sides; recency does not pick a winner. Values compare by Unicode normalization,
-case folding, and collapsed whitespace, with no semantic alias or unit matching.
-
-Runtime commits say `ingest source-NNN by Contributor`, with source, contributor,
-pages, and conflict count in the message. The Git author/committer uses local Git
-configuration; the source contributor is a separate user-supplied label, not an
-authenticated identity. Only explicit ingest-owned files are staged/committed.
-Unrelated unstaged work is left alone; existing staged changes or dirty memory block
-ingestion. `.env` and the persistent lock file are ignored.
-
-On extraction, validation, write, or commit failure, the CLI reports failure and
-restores wiki files and ingest-owned staging. A fully saved raw source remains
-immutable and uncommitted. Retry its **exact original text with the same contributor**
-to reuse that source ID. Other notes are blocked while it is pending. Successful
-exact retries return the existing source/commit without another LLM call through
-`/add` (natural input may still incur routing). This deliberately treats identical
-text from the same contributor as a retry; a different contributor adds new evidence.
-
-The lock serializes writers sharing one checkout, including the LLM request and Git
-commit. It does not coordinate independent/distributed filesystems. Caught failures
-roll back; process termination/power loss or rollback failure may require manual Git
-inspection/recovery. A lock is not a crash-safe multi-file transaction. Ingest refuses
-unsupported manual wiki/index edits instead of replacing them.
-
-## Two-source manual demo (real API, opt-in)
-
-With the key configured, launch `goflight-memory --user John` and enter:
-
-> I spoke with Atlantic Air. They operate N123GF, which is a Challenger 350 based at Teterboro. They require 24 hours notice for bookings.
-
-Exit and launch `goflight-memory --user Sarah`, then enter:
-
-> Atlantic Air told me N123GF is now based at Westchester and they require 48 hours notice.
-
-On an empty memory these create `source-001` and `source-002`, two entity pages,
-and unresolved `home_base` and `minimum_booking_notice` conflicts. Use `/status`;
-inspect `memory/raw/`, `memory/wiki/aircraft/n123gf.md`,
-`memory/wiki/operators/atlantic-air.md`, `index.md`, and `CHANGELOG.md`.
-Run `git log --oneline` to see both runtime commits separately from development history.
-On a populated memory IDs continue sequentially; exact repeated notes are idempotent.
-
-## Query demo (real API, opt-in)
-
-After the two-source ingest demo, use Sarah's CLI to ingest:
-
-> Acme Corp prefers Challenger-class aircraft and departures from Teterboro or Westchester.
-
-Then launch `goflight-memory --user Wajeeh` and ask:
-
-- What do we know about Atlantic Air?
-- Would Atlantic Air's aircraft fit Acme Corp's known preferences?
-- Does Atlantic Air allow pets?
-- Where is N123GF based?
-
-Expect page citations, a qualified comparison spanning customer/operator/aircraft
-pages, unknown pet policy, and both unresolved home-base values. Check `git status`
-and `git log --oneline` before and after: these questions make no memory changes or commits.
-
-## Lint demo (offline)
-
-After the existing ingest demo, run `git status --short` and `git rev-parse HEAD`,
-then launch with the API key deliberately disabled:
+## Run the application
 
 ```sh
-OPENAI_API_KEY= goflight-memory --user Wajeeh
+goflight-memory --user Jack
 ```
 
-Enter “Check the memory for problems.”, “Are there any contradictions?”, and `/lint`,
-then `/exit`. All three produce the same report. In the checked-in demo: **5 pages,
-2 contradictions, 0 orphans, 0 broken links, 0 missing sources**. N123GF has Teterboro
-vs Westchester; Atlantic Air has 24 vs 48 hours notice, both attributed to John
-(`source-001`) and Sarah (`source-002`). These are actual ingest-produced records.
-Repeat the Git checks: lint leaves status and HEAD unchanged.
+Type new operational knowledge or a question naturally. `/help` explains `/status`,
+`/lint`, `/add` (enter a note on the next prompt), and `/exit`. No `/query`, `/ingest`,
+or `/history` command is needed; use ordinary Git for history. Each message is
+independent, not inferred from prior conversational turns.
 
-Milestone 4 validation also ran `/lint` against a separate temporary checkout with
-`customers/orphan-demo.md` omitted from its index, a link to a nonexistent aircraft,
-and bare `source-007`: **1 orphan, 1 broken link, 1 missing source**. The controlled
-files were removed afterward; production memory was never changed. Equivalent
-fixtures live in `tests/test_lint.py`, so they can be rerun without an API key.
+## Load/run the fictional demo
 
-## Validation and roadmap
+[samples/demo.json](samples/demo.json) contains **nine notes from John and Sarah**:
+Atlantic Air / N123GF, SkyBridge Aviation / N777SB, Acme Corp, and Northstar Capital.
+They cover aircraft types, bases, booking notice, dated availability, preferences,
+past trips, and booking requirements. All operational details are fictional.
+
+The checkout ships with real ingested memory and its original history. Replay the
+notes through the **same production ingest function** with:
+
+```sh
+python -m goflight_memory.demo
+```
+
+Exact committed contributor/text retries reuse their existing source and commit,
+so a fully loaded checkout needs no new API calls. An incomplete load resumes on
+the same command. Never edit pending raw sources; fix the reported cause and retry.
+
+For a clean demonstration, use a **new isolated directory** (recommended below).
+The loader creates empty memory and one real initialization commit, then ingests
+each note with the LLM and creates nine attributed runtime commits. It refuses
+every existing destination, including empty directories and symlinks. There is no
+destructive reset. It copies the schema and configured Git author identity, but no
+secrets, user memory, or fabricated history.
+
+## Five-minute demo
+
+After setup above, with Git identity and an API key configured:
+
+```sh
+# From the source checkout: create a unique parent, not a reset target.
+DEMO_PARENT=$(mktemp -d)
+DEMO_ROOT="$DEMO_PARENT/memory-demo"
+python -m goflight_memory.demo --fresh "$DEMO_ROOT"
+
+# The new repository has no .env. Enter the key without terminal echo.
+export OPENAI_API_KEY="$(python -c 'import getpass; print(getpass.getpass("OpenAI API key: "))')"
+export GOFLIGHT_ROOT="$DEMO_ROOT"
+git -C "$DEMO_ROOT" status --short
+git -C "$DEMO_ROOT" rev-parse HEAD
+goflight-memory --user Jack
+```
+
+Enter these messages, one at a time:
+
+```text
+Would Atlantic Air's aircraft fit Acme Corp's known preferences?
+Does Atlantic Air allow pets?
+Where is N123GF based?
+How much booking notice does Atlantic Air require?
+Check the memory for problems.
+/lint
+/exit
+```
+
+Expected: three-page comparison with uncertainty, unknown pet policy, both base
+values, both notice values, and matching conversational/slash lint reports.
+Aircraft-class consistency and prior trips do not establish current availability,
+service suitability, or permission to promise a flight.
+
+```sh
+git -C "$DEMO_ROOT" log --oneline
+git -C "$DEMO_ROOT" show --stat HEAD
+git -C "$DEMO_ROOT" status --short
+git -C "$DEMO_ROOT" rev-parse HEAD
+unset GOFLIGHT_ROOT
+```
+
+Query/lint leave status and HEAD unchanged. Isolated memory is kept for inspection;
+no main-checkout data is deleted. To resume it, export its `GOFLIGHT_ROOT` and provide
+the key again. A fresh live load took **24 seconds**, and the complete query/lint
+sequence **11.3 seconds** in acceptance testing; install/key entry and provider latency
+vary. The walkthrough budgets remaining time for inspecting evidence.
+
+## Example interactions and observed results
+
+- “N123GF is available for charter on October 14 and 15, 2026, subject to operator confirmation.” → attributed ingestion.
+- “Would Atlantic Air's aircraft fit Acme Corp's known preferences?” → customer,
+  operator, and aircraft pages; class comparison and unresolved base/notice.
+- “Does Atlantic Air allow pets?” → information absent, not an invented policy.
+- “Where is N123GF based?” → Teterboro **and** Westchester; unresolved.
+- “How much booking notice does Atlantic Air require?” → 24 **and** 48 hours; unresolved.
+
+The fresh acceptance run had **9 sources, 6 entities, 8 scanned wiki pages, 2
+contradictions, and 0 orphan/broken-link/missing-source issues**. Lint intentionally
+is not “clean”: the two contradictions demonstrate conflict preservation.
+
+**Historical checkout caveat:** its first source-008 extraction misclassified vegetarian
+catering as `aircraft_preferences`, creating a third warning against Challenger-class
+aircraft. Evidence and the runtime commit remain intact. Field guidance was clarified;
+the fresh run put catering under `travel_preferences`. The historical multi-page query
+can reject a one-sided model answer and request a retry. Prefer the fresh path above
+for evaluation. This is a visible semantic limitation, not a repaired conflict.
+
+## Conflict handling and failures
+
+Values compare by Unicode normalization, case folding, and collapsed whitespace.
+Different values for one entity/field retain evidence and become unresolved; recency
+is not resolution. Lint checks stored status, not semantic contradictions. It recognizes
+historical resolved records but provides no resolution operation. Query appends all
+conflicts from consulted pages and rejects literal one-sided answers.
+
+Missing keys, refused/invalid model output, unsafe selected paths, malformed pages,
+and Git failures produce errors, not success. Caught ingest failures restore wiki
+changes/staging; a saved raw note remains pending for exact-text/same-contributor
+retry. Dirty memory or unrelated staged changes block ingest. An empty wiki query
+returns unknown without an LLM call. `/status` and `/lint` work offline.
+
+## Concurrency model
+
+One repository-level POSIX lock serializes the entire ingest transaction, including
+extraction and commit. Read operations share an existing lock without creating it;
+query releases it before synthesis. **Only cooperating writers sharing one repository/
+filesystem are protected**, not distributed nodes or manual edits. A waiting writer
+blocks until the first finishes. Kill/power loss can require manual Git recovery:
+this is not a crash-safe multi-file database transaction.
+
+## Tests
 
 ```sh
 python -m unittest discover -s tests -v
+# Focused orphan demo using temporary fixtures:
+python -m unittest discover -s tests -p test_lint.py -v
 ```
 
-- Tests mock LLM calls and use real temporary Git repositories; no API key/network
-  is required. They cover ingestion, retries, concurrent writes, query discovery and
-  bounds, path/citation validation, conflicts, unknown answers, lint routing and all
-  four integrity checks, resolved records, malformed files, and read-only behavior.
-  An integration regression runs ingest → lint → query → ingest in a temporary repository.
-- Milestone 4: complete; deterministic wiki lint, with no new dependencies.
-- Milestone 5: fictional samples, a short demo, concurrency checks, and hardening.
+Normal tests use mocked semantic responses and real temporary files/Git; no API is
+required. They cover foundation, ingestion, query, lint, routing, retries, safe demo
+creation, all nine sample transactions, and overlapping writes. The lock test holds
+writer A inside extraction, proves B cannot enter, then verifies both contributors'
+evidence and commits survive. A separate process-lock test also runs. Orphan tests
+omit a temporary entity from the index; infrastructure is excluded and index-only
+links count. No orphan fixture is left in the main wiki.
 
-See [schema.md](schema.md) for page rules and [ARCHITECTURE.md](ARCHITECTURE.md) for
-the trust boundary and planned operations.
+## Design tradeoffs / limitations
+
+- This is an interview prototype, not production-ready or authenticated. Source
+  contributor labels differ from Git's locally configured author/committer.
+- Structured output validates shape, not semantic truth. [OpenAI guidance](https://developers.openai.com/api/docs/guides/structured-outputs)
+  notes that mistakes remain possible; clarified prompts are not a proof.
+- No semantic aliases, unit equivalence, temporal supersession, or multi-valued field
+  reconciliation. Conservative conflicts can be false positives.
+- Queries read only the wiki: up to 5 pages / 2 hops, 32 KiB per page / 64 KiB index.
+  Bounded retrieval can miss facts; citation checks are not full entailment checks.
+- Generated inline Markdown links only; no fragment-heading validation. Zero incoming
+  links define orphans, so disconnected cycles can pass. Read errors can leave a partial graph.
+- Lint checks source existence, not sentence-level citation coverage. It never repairs
+  files, commits, or calls an LLM. Noncanonical manual edits block ingest.
+
+## What I would build next
+
+With a week: evidence-preserving human resolution, reviewable branches/PRs, richer
+schema/entity handling, better retrieval, evaluation/observability, and optional MCP.
+UI, authentication, deployment, and heavy orchestration were deliberately not built.
+See [SUBMISSION_NOTE.md](SUBMISSION_NOTE.md) and the [verified checklist](docs/VALIDATION.md).

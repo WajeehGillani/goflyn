@@ -24,6 +24,11 @@ is a Markdown table with columns `Field | Value | Evidence`. Use these field nam
 | Aircraft | type; operator; home_base; availability; operating_notes |
 | Customer | aircraft_preferences; airport_preferences; travel_preferences; operating_notes |
 
+Customer aircraft preferences describe aircraft types/classes, not catering or
+cabin activities. Use travel_preferences for catering, comfort, and working in
+flight; airport_preferences for departure airports; operating_notes for past trips.
+Keep an explicitly combined alternative (e.g. "Teterboro or Westchester") together.
+
 Represent fleet relationships as aircraft `operator` facts. Python generates
 reciprocal aircraft/operator links with evidence. Do not infer a relationship from
 co-occurrence alone. Omit missing fields rather than asserting invented values.
