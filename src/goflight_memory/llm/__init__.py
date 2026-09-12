@@ -1,1 +1,1 @@
-"""LLM integration boundary; no provider is configured yet."""
+"""Bounded semantic extraction and routing through one provider adapter."""

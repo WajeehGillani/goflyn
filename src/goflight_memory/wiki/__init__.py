@@ -1,1 +1,1 @@
-"""Reserved for future wiki compilation and reading operations."""
+"""Deterministic wiki naming, reconciliation, and Markdown serialization."""

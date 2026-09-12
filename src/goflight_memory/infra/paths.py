@@ -33,3 +33,21 @@ class ProjectPaths:
     @property
     def env_path(self) -> Path:
         return self.repository_root / ".env"
+
+    @property
+    def lock_path(self) -> Path:
+        return self.memory_dir / ".write.lock"
+
+    def memory_path(self, relative: str) -> Path:
+        """Only deterministic application paths may reach the filesystem."""
+        path = self.memory_dir / relative
+        if path.is_absolute() and not path.is_relative_to(self.memory_dir):
+            raise ValueError("Path is outside memory")
+        if ".." in path.parts:
+            raise ValueError("Parent traversal is not allowed")
+        for part in (path, *path.parents):
+            if part == self.repository_root:
+                break
+            if part.is_symlink():
+                raise ValueError("Symlinks are not supported inside memory")
+        return path

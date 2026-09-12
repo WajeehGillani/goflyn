@@ -1,6 +1,6 @@
 # Team Memory Wiki Schema
 
-This document guides future wiki maintenance. It is not a database schema.
+This document defines wiki maintenance rules. It is not a database schema.
 
 ## Pages and naming
 
@@ -14,22 +14,30 @@ whitespace replaced by hyphens. Python owns normalization and collision handling
 never merge ambiguous identities merely because their slugs match. Keep existing
 page paths stable when new aliases appear.
 
-Use these level-two sections; leave unknown sections empty or write `Unknown`.
+Each page starts with its name and `Type: operator|aircraft|customer`, followed by
+`## Facts`, `## Related entities`, `## Conflicts`, and `## Sources`. The Facts section
+is a Markdown table with columns `Field | Value | Evidence`. Use these field names:
 
-| Page type | Sections |
+| Page type | Supported fields |
 | --- | --- |
-| Operator | Contacts; Booking requirements; Operating notes; Aircraft; Sources; Conflicts |
-| Aircraft | Type; Operator; Home base; Availability; Operating notes; Sources; Conflicts |
-| Customer | Aircraft preferences; Airport preferences; Travel preferences; Operating notes; Sources; Conflicts |
+| Operator | contacts; minimum_booking_notice; booking_requirements; operating_notes |
+| Aircraft | type; operator; home_base; availability; operating_notes |
+| Customer | aircraft_preferences; airport_preferences; travel_preferences; operating_notes |
+
+Represent fleet relationships as aircraft `operator` facts. Python generates
+reciprocal aircraft/operator links with evidence. Do not infer a relationship from
+co-occurrence alone. Omit missing fields rather than asserting invented values.
 
 ## Evidence and updates
 
 1. Original raw sources are immutable: preserve their text unchanged. Each source
    has a stable source ID, contributor, source type, and timezone-aware creation time.
 2. Every factual wiki claim must cite at least one source beside the claim. Use a
-   relative Markdown link labeled with the source ID and contributor, such as
-   `[<source_id> — <contributor>](../../raw/<source-file>)` from an entity page.
-   This is a link template; the raw filename format will be defined with ingest.
+   relative Markdown link followed by the contributor, such as
+   `[source-001](../../raw/source-001.md) — John` from an entity page.
+   Raw files use `source-NNN.md` with sequential Python-generated IDs. The metadata
+   header contains `source_id`, `contributor`, `source_type`, and `created_at`, then
+   `---` and one blank separator line precede the exact UTF-8 note body.
 3. Never invent missing information or infer an unstated fact as certain.
 4. Add new facts; attach additional attributed evidence to matching facts. Earlier
    evidence must remain traceable even after newer evidence arrives.
@@ -37,6 +45,9 @@ Use these level-two sections; leave unknown sections empty or write `Unknown`.
    their source/contributor evidence; mark the affected claim and the Conflicts
    section **Unresolved** with a stable conflict ID. Recency alone does not resolve
    a contradiction. Human review is required; resolution is not implemented yet.
+   Compare values using Unicode normalization, case folding, and collapsed whitespace.
+   All different values for one entity/field are conservatively conflicting, even
+   for potentially multi-valued fields such as contacts or preferences.
 6. Link related entities using relative Markdown links to their wiki pages. Links
    express relationships; factual relationship claims still require source evidence.
 7. Keep a Sources section listing the evidence used by the page. This supplements
@@ -45,6 +56,13 @@ Use these level-two sections; leave unknown sections empty or write `Unknown`.
    section of `index.md`; append attributed summaries with source and page links to
    `CHANGELOG.md`. These navigation summaries must not introduce unsupported facts.
 
-The LLM proposes semantic content. Deterministic Python validates provenance,
-resolves paths, writes files, and preserves conflicts. This milestone defines the
-contract only; it does not enforce persisted wiki content yet.
+The LLM proposes structured entities/facts. Deterministic Python validates provenance,
+resolves paths, writes files, and preserves conflicts. Equal normalized values share
+one fact row; multiple evidence references are separated by `<br>`. Python escapes
+Markdown/HTML metacharacters in textual data so it cannot create page structure.
+Conflict sections use stable `### conflict-<hash>` headings, `Field: <field>`, and an
+exact `Status: unresolved` line followed by every supported value and its evidence.
+
+Pages and index are generated deterministically. Ingest refuses noncanonical manual
+edits instead of silently discarding them. Raw sources must never be edited, including
+pending sources retained after failure. Earlier citations always remain intact.

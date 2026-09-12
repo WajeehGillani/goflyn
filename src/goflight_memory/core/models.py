@@ -1,4 +1,4 @@
-"""Small validated records shared by the future memory operations."""
+"""Small validated records shared by memory operations."""
 
 from enum import StrEnum
 from typing import Annotated, Literal, Self
@@ -26,7 +26,7 @@ class EntityType(StrEnum):
 
 
 class SourceMetadata(DomainModel):
-    """Attribution only; unchanged raw source text is stored separately later."""
+    """Attribution only; unchanged raw source text is stored separately."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -97,3 +97,34 @@ class LintIssue(DomainModel):
     page: NonEmptyText
     message: NonEmptyText
     severity: Literal["info", "warning", "error"]
+
+
+class Extraction(DomainModel):
+    entities: list[Entity]
+    facts: list[Fact]
+
+
+class Evidence(DomainModel):
+    source_id: NonEmptyText
+    contributor: NonEmptyText
+
+
+class WikiFact(DomainModel):
+    field: NonEmptyText
+    value: NonEmptyText
+    evidence: list[Evidence] = Field(min_length=1)
+
+
+class WikiPage(DomainModel):
+    entity: Entity
+    facts: list[WikiFact] = Field(default_factory=list)
+
+
+class IngestResult(DomainModel):
+    source_id: NonEmptyText
+    created_entities: list[Entity] = Field(default_factory=list)
+    updated_entities: list[Entity] = Field(default_factory=list)
+    pages_changed: list[str] = Field(default_factory=list)
+    conflicts: list[Conflict] = Field(default_factory=list)
+    git_commit: NonEmptyText
+    already_ingested: bool = False

@@ -1,7 +1,7 @@
 """Load the selected checkout's .env without overriding shell variables."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -12,10 +12,17 @@ from goflight_memory.infra.paths import ProjectPaths
 class Settings:
     paths: ProjectPaths
     contributor: str | None
+    api_key: str = field(default="", repr=False)
+    model: str = "gpt-4.1-mini"
 
 
 def load_settings(user: str | None = None) -> Settings:
     paths = ProjectPaths.resolve(os.environ.get("GOFLIGHT_ROOT") or None)
     load_dotenv(paths.env_path, override=False)
     contributor = user if user is not None else os.environ.get("GOFLIGHT_USER", "")
-    return Settings(paths=paths, contributor=contributor.strip() or None)
+    return Settings(
+        paths=paths,
+        contributor=contributor.strip() or None,
+        api_key=os.environ.get("OPENAI_API_KEY", "").strip(),
+        model=os.environ.get("OPENAI_MODEL", "").strip() or "gpt-4.1-mini",
+    )

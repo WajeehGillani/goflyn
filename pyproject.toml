@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "goflight-team-memory"
-version = "0.1.0"
+version = "0.2.0"
 description = "A shared Markdown team memory for GoFlight"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.7,<3",
     "python-dotenv>=1,<2",
     "rich>=13,<15",
+    "openai>=2,<3",
 ]
 
 [project.scripts]
