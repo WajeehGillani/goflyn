@@ -2,10 +2,11 @@
 
 import hashlib
 import html
+import json
 import re
 from collections import defaultdict
 
-from goflight_memory.core.models import Conflict, Entity, Evidence, Fact, WikiFact, WikiPage
+from goflight_memory.core.models import Conflict, Entity, Evidence, Fact, Resolution, WikiFact, WikiPage
 from goflight_memory.wiki.naming import normalized, page_name
 
 TABLE_HEADER = "| Field | Value | Evidence |\n| --- | --- | --- |"
@@ -25,6 +26,16 @@ def evidence_text(evidence: list[Evidence]) -> str:
     )
 
 
+def parse_evidence(text: str) -> list[Evidence]:
+    result = []
+    for citation in text.split("<br>"):
+        match = EVIDENCE.fullmatch(citation)
+        if not match:
+            raise ValueError("Invalid wiki evidence reference")
+        result.append(Evidence(source_id=match[1], contributor=html.unescape(match[2])))
+    return result
+
+
 def conflicts_for(page: WikiPage) -> list[Conflict]:
     fields: dict[str, list[WikiFact]] = defaultdict(list)
     for fact in page.facts:
@@ -35,11 +46,18 @@ def conflicts_for(page: WikiPage) -> list[Conflict]:
             continue
         identity = f"{page.entity.entity_type}:{normalized(page.entity.name)}:{field}"
         conflict_id = "conflict-" + hashlib.sha256(identity.encode()).hexdigest()[:16]
+        resolution = next((r for r in reversed(page.resolutions) if r.conflict_id == conflict_id), None)
+        # New distinct claims reopen the field; earlier human decisions remain history.
+        resolved = resolution is not None and {normalized(f.value) for f in facts} <= {
+            normalized(value) for value in resolution.reviewed_values
+        }
         conflicts.append(Conflict(
             conflict_id=conflict_id,
             entity_type=page.entity.entity_type,
             entity_name=page.entity.name,
             field=field,
+            status="resolved" if resolved else "unresolved",
+            resolution=resolution if resolved else None,
             evidence=[
                 Fact(
                     entity_type=page.entity.entity_type, entity_name=page.entity.name,
@@ -88,16 +106,29 @@ def render_page(page: WikiPage, pages: dict[str, WikiPage]) -> str:
     for conflict in conflicts:
         lines.extend([
             f"### {conflict.conflict_id}", "", f"Field: {escape(conflict.field)}",
-            "Status: unresolved", "",
+            f"Status: {conflict.status}", "",
         ])
         for fact in sorted(page.facts, key=lambda f: normalized(f.value)):
             if fact.field == conflict.field:
                 lines.append(f"- **{escape(fact.value)}** — {evidence_text(fact.evidence)}")
         lines.append("")
+        for resolution in (r for r in page.resolutions if r.conflict_id == conflict.conflict_id):
+            lines.extend([
+                "#### Human resolution", "",
+                f"Current value: {escape(resolution.value)}",
+                f"Reviewer: {escape(resolution.reviewer)}",
+                f"Reason: {escape(resolution.reason)}",
+                f"Resolved at: {resolution.resolved_at.isoformat()}",
+                f"Reviewed values: {escape(json.dumps(resolution.reviewed_values, ensure_ascii=False))}",
+                f"Reviewed sources: {evidence_text(resolution.reviewed_sources)}", "",
+            ])
     # A relationship-only page still displays all of its relationship evidence.
     sources = {(item.source_id, item.contributor)
                for fact in page.facts + [fact for _, fact in related] for item in fact.evidence}
+    sources.update((item.source_id, item.contributor) for item in page.entity_evidence)
     lines.extend(["", "## Sources", ""])
+    if page.entity_evidence:
+        lines.extend([f"Entity assertion: {evidence_text(page.entity_evidence)}", ""])
     lines.extend(f"- {evidence_text([Evidence(source_id=s, contributor=c)])}" for s, c in sorted(sources))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -115,13 +146,25 @@ def parse_page(text: str) -> WikiPage:
         if len(cells) != 3 or not cells[0].startswith("| ") or not cells[-1].endswith(" |"):
             raise ValueError("Invalid wiki fact row")
         field, value, citations = cells[0][2:], cells[1], cells[2][:-2]
-        evidence = []
-        for citation in citations.split("<br>"):
-            match = EVIDENCE.fullmatch(citation)
-            if not match:
-                raise ValueError("Invalid wiki evidence reference")
-            evidence.append(Evidence(source_id=match[1], contributor=html.unescape(match[2])))
+        evidence = parse_evidence(citations)
         page.facts.append(WikiFact(field=html.unescape(field), value=html.unescape(value), evidence=evidence))
+    for line in text.split("\n## Sources\n", 1)[-1].splitlines():
+        if line.startswith("Entity assertion: "):
+            page.entity_evidence.extend(parse_evidence(line.removeprefix("Entity assertion: ")))
+    section = text.split("\n## Conflicts\n", 1)[-1].split("\n## Sources\n", 1)[0]
+    for block in re.split(r"^### ", section, flags=re.M)[1:]:
+        conflict_id = block.splitlines()[0]
+        for record in block.split("#### Human resolution\n\n")[1:]:
+            labels = ("Current value", "Reviewer", "Reason", "Resolved at", "Reviewed values", "Reviewed sources")
+            rows = record.splitlines()
+            if len(rows) < len(labels) or any(not row.startswith(label + ": ") for row, label in zip(rows, labels)):
+                raise ValueError("Malformed human resolution record")
+            values = [row.split(": ", 1)[1] for row in rows[:len(labels)]]
+            page.resolutions.append(Resolution(
+                conflict_id=conflict_id, value=html.unescape(values[0]), reviewer=html.unescape(values[1]),
+                reason=html.unescape(values[2]), resolved_at=values[3],
+                reviewed_values=json.loads(html.unescape(values[4])), reviewed_sources=parse_evidence(values[5]),
+            ))
     return page
 
 
@@ -141,11 +184,7 @@ def conflict_section(markdown: str) -> str:
 
 
 def recorded_conflicts(page: WikiPage, markdown: str) -> list[Conflict]:
-    """Validate generated evidence, but read status from the persisted conflict blocks.
-
-    Resolved records are recognized for diagnostics only; this is not a resolution
-    operation. Missing/inconsistent records are malformed, not inferred conflicts.
-    """
+    """One persisted-conflict interpretation shared by ingest, query, lint and resolve."""
     for heading in ("## Facts", "## Related entities", "## Conflicts", "## Sources"):
         if markdown.splitlines().count(heading) != 1:
             raise ValueError(f"Missing or duplicate section: {heading}")
@@ -155,7 +194,17 @@ def recorded_conflicts(page: WikiPage, markdown: str) -> list[Conflict]:
         section, re.M,
     ))
     expected = conflict_section(render_page(page, {page_name(page.entity): page}))
-    if re.sub(r"^Status: resolved$", "Status: unresolved", section, flags=re.M) != expected:
+    # Pre-5.1 status-only historical records remain lint-readable, not authoritative.
+    comparable = section if page.resolutions else re.sub(r"^Status: resolved$", "Status: unresolved", section, flags=re.M)
+    if comparable != expected:
         raise ValueError("Malformed or inconsistent recorded conflict section")
+    for resolution in page.resolutions:
+        conflict = next((c for c in conflicts_for(page) if c.conflict_id == resolution.conflict_id), None)
+        if conflict is None or not set(resolution.reviewed_values) <= {f.value for f in conflict.evidence}:
+            raise ValueError("Human resolution refers to unknown evidence values")
+        if not {(e.source_id, e.contributor) for e in resolution.reviewed_sources} <= {
+            (f.source_id, f.contributor) for f in conflict.evidence
+        }:
+            raise ValueError("Human resolution refers to unknown source evidence")
     return [conflict.model_copy(update={"status": statuses[conflict.conflict_id]})
             for conflict in conflicts_for(page)]

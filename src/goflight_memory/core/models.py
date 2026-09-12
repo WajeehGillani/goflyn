@@ -54,8 +54,23 @@ class Fact(DomainModel):
     contributor: NonEmptyText
 
 
+class Evidence(DomainModel):
+    source_id: NonEmptyText
+    contributor: NonEmptyText
+
+
+class Resolution(DomainModel):
+    conflict_id: NonEmptyText
+    value: NonEmptyText
+    reviewer: NonEmptyText
+    reason: NonEmptyText
+    resolved_at: AwareDatetime
+    reviewed_values: list[NonEmptyText] = Field(min_length=2)
+    reviewed_sources: list[Evidence] = Field(min_length=1)
+
+
 class Conflict(DomainModel):
-    """Evidence is retained in full; no resolution operation exists yet."""
+    """All evidence is retained; only recorded human decisions can resolve it."""
 
     conflict_id: NonEmptyText
     entity_type: EntityType
@@ -63,6 +78,7 @@ class Conflict(DomainModel):
     field: NonEmptyText
     evidence: list[Fact] = Field(min_length=2)
     status: Literal["unresolved", "resolved"] = "unresolved"
+    resolution: Resolution | None = None
 
     @model_validator(mode="after")
     def validate_evidence(self) -> Self:
@@ -153,11 +169,6 @@ class Extraction(DomainModel):
     facts: list[Fact]
 
 
-class Evidence(DomainModel):
-    source_id: NonEmptyText
-    contributor: NonEmptyText
-
-
 class WikiFact(DomainModel):
     field: NonEmptyText
     value: NonEmptyText
@@ -167,6 +178,14 @@ class WikiFact(DomainModel):
 class WikiPage(DomainModel):
     entity: Entity
     facts: list[WikiFact] = Field(default_factory=list)
+    entity_evidence: list[Evidence] = Field(default_factory=list)
+    resolutions: list[Resolution] = Field(default_factory=list)
+
+
+class ResolveResult(DomainModel):
+    conflict: Conflict
+    page: NonEmptyText
+    git_commit: NonEmptyText
 
 
 class IngestResult(DomainModel):

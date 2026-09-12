@@ -5,6 +5,8 @@ from rich.text import Text
 
 from goflight_memory.agent.prompts import HELP, WELCOME
 from goflight_memory.agent.router import route
+from goflight_memory.agent.resolution import is_conflict_list, is_resolution_request, review_resolution, show_conflicts
+from goflight_memory.core.resolve import ResolveError
 from goflight_memory.core.ingest import IngestError, ingest
 from goflight_memory.core.lint import LintError, lint
 from goflight_memory.core.models import IngestResult, Intent, LintReport, QueryResult
@@ -86,6 +88,7 @@ def run_chat(settings: Settings) -> None:
 
         console.print(f"\nContributor: {contributor}", markup=False)
         console.print("Type naturally or /help.\n")
+        conflict_listing = []
 
         while True:
             message = console.input("[bold]You › [/bold]")
@@ -101,9 +104,16 @@ def run_chat(settings: Settings) -> None:
                     show_status(console, contributor, settings.paths)
                 elif command == "/lint":
                     show_lint(console, lint(paths=settings.paths))
+                elif command == "/conflicts" or is_conflict_list(command):
+                    conflict_listing = show_conflicts(console, settings.paths)
+                elif is_resolution_request(command):
+                    review_resolution(command, conflict_listing, contributor, settings.paths, console)
                 elif command == "/add":
                     note = console.input("Note › ")
                     show_result(console, ingest(note, contributor, paths=settings.paths, client=client))
+                elif command.startswith("/add "):
+                    show_result(console, ingest(message[message.index("/add") + 5:], contributor,
+                                                paths=settings.paths, client=client))
                 elif command.startswith("/"):
                     console.print("Unknown command. Type /help for available commands.")
                 else:
@@ -116,7 +126,7 @@ def run_chat(settings: Settings) -> None:
                         show_result(console, ingest(message, contributor, paths=settings.paths, client=client))
                     else:
                         console.print("Memory › I can save notes, answer wiki questions, and check memory health. Type /help for commands.")
-            except (IngestError, QueryError, LintError, LLMError, GitError, OSError, ValueError) as error:
+            except (IngestError, QueryError, LintError, ResolveError, LLMError, GitError, OSError, ValueError) as error:
                 console.print(f"Memory › {error}", markup=False, style="red")
             console.print()
     except (EOFError, KeyboardInterrupt):

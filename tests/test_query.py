@@ -23,6 +23,8 @@ class FakeQueryLLM:
         self.result = result
         self.selections = []
         self.contexts = []
+        self.corrections = []
+        self.corrected = None
 
     def select_pages(self, question, catalog, limit):
         self.selections.append((question, dict(catalog), limit))
@@ -34,6 +36,10 @@ class FakeQueryLLM:
             answer="Recorded details support only a cautious comparison; unresolved information needs review.",
             pages_used=list(pages),
         )
+
+    def correct_answer(self, question, pages, previous, conflicts):
+        self.corrections.append((question, pages, previous, conflicts))
+        return self.corrected or self.result
 
 
 def wiki_fact(field, value, source="source-001", contributor="John"):
@@ -172,13 +178,76 @@ class QueryTests(unittest.TestCase):
         self.client.result = QueryResult(answer="The current base is uncertain.", pages_used=["aircraft/n123gf.md"], has_conflict=False)
         result = self.ask("Where is N123GF based?")
         self.assertTrue(result.has_conflict)
-        for phrase in ("Teterboro", "Westchester", "Unresolved", "no resolved authoritative value"):
+        for phrase in ("Teterboro", "Westchester", "Unresolved", "no authoritative current value"):
             self.assertIn(phrase, result.answer)
 
-    def test_one_sided_conflict_answer_is_rejected(self):
+    def test_one_sided_conflict_answer_retries_once_then_falls_back(self):
         self.client.result = QueryResult(answer="N123GF is based at Westchester.", pages_used=["aircraft/n123gf.md"])
-        with self.assertRaisesRegex(QueryError, "only one side"):
-            self.ask("Where is N123GF based?")
+        result = self.ask("Where is N123GF based?")
+        self.assertEqual(len(self.client.corrections), 1)
+        self.assertEqual(len(self.client.contexts), 1)
+        self.assertIn("Teterboro", result.answer)
+        self.assertIn("Westchester", result.answer)
+        self.assertIn("source-001", result.answer)
+        self.assertNotIn("Query failed", result.answer)
+
+    def test_complete_relevant_answer_needs_no_retry(self):
+        self.client.result = QueryResult(answer="Teterboro and Westchester conflict; the base remains unresolved.",
+                                         pages_used=["aircraft/n123gf.md"])
+        result = self.ask("Where is N123GF based?")
+        self.assertTrue(result.has_conflict)
+        self.assertEqual(self.client.corrections, [])
+
+    def test_corrective_answer_and_evidence_are_used(self):
+        self.client.result = QueryResult(answer="N123GF is based at Westchester.", pages_used=["aircraft/n123gf.md"])
+        self.client.corrected = QueryResult(answer="Corrected: Teterboro and Westchester conflict and remain unresolved.",
+                                            pages_used=["aircraft/n123gf.md"])
+        result = self.ask("Where is N123GF based?")
+        self.assertIn("Corrected:", result.answer)
+        self.assertEqual(len(self.client.corrections), 1)
+        self.assertEqual({f.source_id for f in self.client.corrections[0][3][0].evidence}, {"source-001", "source-002"})
+
+    def test_both_values_do_not_excuse_choosing_a_winner(self):
+        for unsafe in ("Teterboro and Westchester conflict, but Westchester is correct.",
+                       "Despite an unresolved conflict with Teterboro, N123GF is currently based at Westchester.",
+                       "Teterboro and Westchester conflict; use the latest report."):
+            with self.subTest(answer=unsafe):
+                self.client.corrections.clear()
+                self.client.result = QueryResult(answer=unsafe, pages_used=["aircraft/n123gf.md"])
+                result = self.ask("Where is N123GF based?")
+                self.assertEqual(len(self.client.corrections), 1)
+                self.assertNotIn(unsafe, result.answer)
+                self.assertIn("no authoritative current value", result.answer)
+
+    def test_retry_provider_failure_or_invalid_citation_falls_back(self):
+        self.client.result = QueryResult(answer="Westchester is the base.", pages_used=["aircraft/n123gf.md"])
+        with patch.object(self.client, "correct_answer", side_effect=LLMError("provider unavailable")) as retry:
+            result = self.ask("Where is N123GF based?")
+        self.assertEqual(retry.call_count, 1)
+        self.assertIn("source-001", result.answer)
+        self.assertNotIn("provider unavailable", result.answer)
+        self.client.corrected = QueryResult(answer="Teterboro and Westchester remain unresolved.", pages_used=["../raw/source-001.md"])
+        self.assertIn("source-001", self.ask("Where is N123GF based?").answer)
+
+    def test_unrelated_base_conflict_does_not_affect_aircraft_type(self):
+        self.client.result = QueryResult(answer="N123GF is a Challenger 350.", pages_used=["aircraft/n123gf.md"])
+        result = self.ask("What type of aircraft is N123GF?")
+        self.assertFalse(result.has_conflict)
+        self.assertNotIn("Teterboro", result.answer)
+        self.assertEqual(self.client.corrections, [])
+
+    def test_answer_reliance_triggers_guard_even_for_unrelated_question(self):
+        self.client.result = QueryResult(answer="N123GF is a Challenger 350 based at Westchester.", pages_used=["aircraft/n123gf.md"])
+        result = self.ask("What type of aircraft is N123GF?")
+        self.assertEqual(len(self.client.corrections), 1)
+        self.assertTrue(result.has_conflict)
+
+    def test_retry_and_fallback_preserve_files(self):
+        before = {p: p.read_bytes() for p in self.paths.memory_dir.rglob("*") if p.is_file()}
+        self.client.result = QueryResult(answer="Westchester is correct.", pages_used=["aircraft/n123gf.md"])
+        self.ask("Where is N123GF based?")
+        self.assertEqual(before, {p: p.read_bytes() for p in self.paths.memory_dir.rglob("*") if p.is_file()})
+        self.assertFalse(self.paths.lock_path.exists())
 
     def test_unread_citation_and_missing_citation_are_rejected(self):
         for pages in (["../raw/source-001.md"], ["aircraft/n123gf.md"], []):

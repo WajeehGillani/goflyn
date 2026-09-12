@@ -274,9 +274,9 @@ class LintTests(unittest.TestCase):
              patch("goflight_memory.agent.chat.lint", wraps=lint) as operation, \
              patch("goflight_memory.llm.client.LLMClient.classify", side_effect=AssertionError("LLM called")):
             run_chat(settings)
-        self.assertEqual(operation.call_count, 6)
+        self.assertEqual(operation.call_count, 5)  # Explicit conflict listing now supplies numbered review context.
         self.assertTrue(all(call.kwargs == {"paths": self.paths} for call in operation.call_args_list))
-        self.assertEqual(output.getvalue().count("Contradictions: 1"), 6)
+        self.assertEqual(output.getvalue().count("Contradictions: 1"), 5)
         self.assertEqual(output.getvalue().count("minimum_booking_notice"), 6)
         self.assertIn("Goodbye.", output.getvalue())
 

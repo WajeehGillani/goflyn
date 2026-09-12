@@ -1,6 +1,7 @@
 """Validate the semantic proposal against Python-owned identities and provenance."""
 
 from goflight_memory.core.models import Extraction, SourceMetadata
+from goflight_memory.core.assertions import explicit_entity
 from goflight_memory.llm.client import LLMClient
 from goflight_memory.wiki.naming import field_name, normalized
 
@@ -12,6 +13,9 @@ FIELDS = {
 
 
 def extract(client: LLMClient, schema: str, metadata: SourceMetadata, text: str) -> Extraction:
+    entity = explicit_entity(text)
+    if entity is not None:
+        return Extraction(entities=[entity], facts=[])
     proposed = client.extract(schema, metadata.source_id, metadata.contributor, text)
     # Revalidate even an injected client: the boundary is not the provider adapter.
     result = Extraction.model_validate(proposed.model_dump() if isinstance(proposed, Extraction) else proposed)

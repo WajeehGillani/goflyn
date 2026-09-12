@@ -3,11 +3,14 @@
 import re
 
 from goflight_memory.core.models import Intent, RouterDecision
+from goflight_memory.core.assertions import explicit_entity
 from goflight_memory.llm.client import LLMClient
 
 
 def route(message: str, client: LLMClient) -> RouterDecision:
     stripped = message.strip()
+    if explicit_entity(stripped) is not None:
+        return RouterDecision(intent=Intent.INGEST, confidence=1)
     if stripped.lower().rstrip("!?.") in {"hi", "hello", "hey", "thanks", "thank you", "what can you do", "how can you help"}:
         return RouterDecision(intent=Intent.GENERAL, confidence=1)
     health_request = re.match(r"^(?:please\s+)?(?:check|find|show|are there|is the|is our)\b", stripped, re.I)

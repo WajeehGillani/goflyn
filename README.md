@@ -2,7 +2,7 @@
 
 A small shared-memory prototype where raw team notes are compiled by an LLM into
 an attributed, interlinked Markdown wiki that humans and AI agents can query.
-No vector database or chunk-based RAG is used. **Milestones 1–5 are complete.**
+No vector database or chunk-based RAG is used. **Milestones 1–5.1 are complete.**
 
 ## What it does
 
@@ -11,10 +11,12 @@ No vector database or chunk-based RAG is used. **Milestones 1–5 are complete.*
 - Preserves conflicting values and evidence; never silently picks the newest.
 - Answers from compiled wiki pages and returns the pages used.
 - Lints conflicts, orphans, broken links, and missing sources without an LLM or writes.
+- Records explicitly confirmed human resolutions without deleting earlier evidence.
 
 ## Architecture
 
-Conversation → intent router → `ingest`, `query`, or `lint`. The LLM interprets text;
+Conversation → intent router → `ingest`, `query`, or `lint`; explicit human review → `resolve`.
+The LLM interprets text;
 Python owns paths, provenance, reconciliation, locking, Git, and lint. See the
 [one-page architecture](ARCHITECTURE.md) and [live demo script](DEMO_SCRIPT.md).
 
@@ -62,9 +64,62 @@ goflight-memory --user Jack
 ```
 
 Type new operational knowledge or a question naturally. `/help` explains `/status`,
-`/lint`, `/add` (enter a note on the next prompt), and `/exit`. No `/query`, `/ingest`,
+`/lint`, `/add` (next prompt or inline), `/conflicts`, `/resolve <id>`, and `/exit`. No `/query`, `/ingest`,
 or `/history` command is needed; use ordinary Git for history. Each message is
-independent, not inferred from prior conversational turns.
+independent, except numbered references to the most recent conflict listing in that session.
+
+## Explicit entity creation
+
+Use `/add new customer Wajeeh`, `/add customer Acme Corp`,
+“Add a new customer called Northstar Capital.”, “We have a new operator called
+Falcon Air.”, or “Add aircraft N123AB.” These explicit assertions use the same ingest
+engine: immutable raw instruction first, structured extraction, wiki/index/changelog,
+then Git commit. Only customer/operator/aircraft pages are supported. Entity-only pages
+have an empty Facts table and an attributed entity assertion under Sources; no unknown
+attributes are invented. Repeating an entity merges provenance into its existing page.
+“I spoke with someone named Wajeeh yesterday.” alone does not establish a customer.
+The small explicit grammar runs without an LLM; ordinary notes still use extraction.
+Previously committed notes are not silently reprocessed or backfilled.
+
+## Human conflict resolution
+
+Conflicts are never automatically resolved. Start with “Show unresolved conflicts.”
+(or `/conflicts`), then use one of these forms:
+
+```text
+Number 1 should be Westchester. We confirmed the aircraft moved.
+Westchester is correct for the N456FC home-base conflict. Falcon Charter confirmed the move.
+/resolve <conflict-id>
+```
+
+The last form prompts for a value and reason, including a custom qualified statement
+such as “24 hours weekdays; 48 hours weekends”. The CLI previews all evidence, the
+exact proposed value, your session reviewer name, and reason. Only `yes` writes;
+`no` or a blank prompted value cancels. Numbering is session-local; stored IDs are
+stable hashes of entity type, normalized name, and field, unchanged from earlier milestones.
+
+Under the existing write lock, `resolve_conflict` rechecks the reviewed evidence,
+records reviewer/reason/UTC time and current value, preserves original facts/sources,
+appends the changelog, and commits only the affected page and changelog. Stale
+confirmations and already-resolved IDs are rejected. Lint stops counting the resolved
+record; query uses its current value. New distinct evidence reopens the same ID while
+retaining decision history; further evidence for already-reviewed values does not.
+Reviewer names are local labels, not authentication. The LLM has no resolution tool.
+
+## Query conflict safety
+
+The guard checks fields relevant to the question or generated answer, not every
+conflict on a loaded page. A type question can return “Citation Latitude” despite an
+unresolved home base. A base question surfaces all competing values, source/contributor
+evidence, and unresolved status, without choosing a winner.
+
+An unsafe relevant-conflict answer triggers exactly one corrective generation with
+the competing evidence. If that attempt fails validation or the provider fails, a
+deterministic structured-evidence response is returned; no further LLM call or internal
+conflict-validation error reaches the user. Current human-resolved values replace
+historical alternatives in synthesis context. Query, including retry/fallback, is read-only.
+Field relevance and answer checks are conservative lexical heuristics, not a proof
+of semantic grounding; unrelated provider/path/schema errors remain explicit errors.
 
 ## Load/run the fictional demo
 
@@ -156,17 +211,18 @@ is not “clean”: the two contradictions demonstrate conflict preservation.
 **Historical checkout caveat:** its first source-008 extraction misclassified vegetarian
 catering as `aircraft_preferences`, creating a third warning against Challenger-class
 aircraft. Evidence and the runtime commit remain intact. Field guidance was clarified;
-the fresh run put catering under `travel_preferences`. The historical multi-page query
-can reject a one-sided model answer and request a retry. Prefer the fresh path above
-for evaluation. This is a visible semantic limitation, not a repaired conflict.
+the fresh run put catering under `travel_preferences`. Milestone 5.1 now automatically
+retries unsafe relevant-conflict answers and falls back safely. The historical extraction
+mistake remains visible; this milestone does not rewrite old evidence.
 
 ## Conflict handling and failures
 
 Values compare by Unicode normalization, case folding, and collapsed whitespace.
 Different values for one entity/field retain evidence and become unresolved; recency
-is not resolution. Lint checks stored status, not semantic contradictions. It recognizes
-historical resolved records but provides no resolution operation. Query appends all
-conflicts from consulted pages and rejects literal one-sided answers.
+is not resolution. Ingest/query/lint/resolve share one structured conflict parser/model.
+Lint reports unresolved records, not semantic contradictions inferred by an LLM.
+Older status-only resolved records remain lint-readable but cannot supply an authoritative
+query value or be silently ingested; full human resolution metadata is required.
 
 Missing keys, refused/invalid model output, unsafe selected paths, malformed pages,
 and Git failures produce errors, not success. Caught ingest failures restore wiki
@@ -176,8 +232,9 @@ returns unknown without an LLM call. `/status` and `/lint` work offline.
 
 ## Concurrency model
 
-One repository-level POSIX lock serializes the entire ingest transaction, including
-extraction and commit. Read operations share an existing lock without creating it;
+One repository-level POSIX lock serializes ingest and resolution transactions, including
+extraction and commit. Human confirmation occurs before acquiring the write lock and
+the reviewed evidence is checked again inside it. Read operations share an existing lock without creating it;
 query releases it before synthesis. **Only cooperating writers sharing one repository/
 filesystem are protected**, not distributed nodes or manual edits. A waiting writer
 blocks until the first finishes. Kill/power loss can require manual Git recovery:
@@ -193,7 +250,9 @@ python -m unittest discover -s tests -p test_lint.py -v
 
 Normal tests use mocked semantic responses and real temporary files/Git; no API is
 required. They cover foundation, ingestion, query, lint, routing, retries, safe demo
-creation, all nine sample transactions, and overlapping writes. The lock test holds
+creation, all nine sample transactions, conflict retry/fallback, entity-only assertions,
+human confirmation/cancellation, stale reviews, scoped resolution commits/rollback,
+resolved/reopened state, and overlapping writes. The lock test holds
 writer A inside extraction, proves B cannot enter, then verifies both contributors'
 evidence and commits survive. A separate process-lock test also runs. Orphan tests
 omit a temporary entity from the index; infrastructure is excluded and index-only
@@ -216,7 +275,8 @@ links count. No orphan fixture is left in the main wiki.
 
 ## What I would build next
 
-With a week: evidence-preserving human resolution, reviewable branches/PRs, richer
+With a week: reviewable branches/PRs, richer
 schema/entity handling, better retrieval, evaluation/observability, and optional MCP.
 UI, authentication, deployment, and heavy orchestration were deliberately not built.
-See [SUBMISSION_NOTE.md](SUBMISSION_NOTE.md) and the [verified checklist](docs/VALIDATION.md).
+See [SUBMISSION_NOTE.md](SUBMISSION_NOTE.md), [Milestone 5.1 validation](docs/VALIDATION_5_1.md),
+[decisions](DECISIONS.md), and the [historical M5 checklist](docs/VALIDATION.md).

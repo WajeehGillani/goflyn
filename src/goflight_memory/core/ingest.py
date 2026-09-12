@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from goflight_memory.core.extract import extract
-from goflight_memory.core.models import IngestResult, SourceMetadata
+from goflight_memory.core.models import Evidence, IngestResult, SourceMetadata
+from goflight_memory.core.assertions import explicit_entity
 from goflight_memory.infra.git import GitRepository
 from goflight_memory.infra.lock import repository_lock
 from goflight_memory.infra.paths import ProjectPaths
@@ -80,7 +81,8 @@ def _ingest_locked(text: str, contributor: str, paths: ProjectPaths, client: LLM
         extraction = extract(client, schema, metadata, text)
         pages = load_pages(paths, sources)
         old_names = set(pages)
-        reconcile(pages, extraction)
+        assertion = Evidence(source_id=metadata.source_id, contributor=contributor) if explicit_entity(text) else None
+        reconcile(pages, extraction, assertion)
         replacements = {
             paths.memory_path(f"wiki/{name}"): render_page(page, pages).encode("utf-8")
             for name, page in sorted(pages.items())
@@ -91,7 +93,7 @@ def _ingest_locked(text: str, contributor: str, paths: ProjectPaths, client: LLM
                         if not path.exists() or path.read_bytes() != body}
         changed_names = [name for name in pages if paths.memory_path(f"wiki/{name}") in replacements]
         conflicts = [conflict for page in pages.values() for conflict in conflicts_for(page)
-                     if any(f.source_id == metadata.source_id for f in conflict.evidence)]
+                     if conflict.status == "unresolved" and any(f.source_id == metadata.source_id for f in conflict.evidence)]
         changelog = paths.memory_path("wiki/CHANGELOG.md")
         summary = [
             "", f"## {metadata.source_id}", "",
@@ -103,7 +105,8 @@ def _ingest_locked(text: str, contributor: str, paths: ProjectPaths, client: LLM
             summary.append("- No supported new wiki facts.")
         summary.extend(["", "Changes:", ""])
         summary.append("- Added new facts or supporting evidence; retained previous evidence."
-                       if extraction.facts else "- Preserved the raw note; no supported facts were extracted.")
+                       if extraction.facts else "- Recorded an explicit entity assertion with source evidence."
+                       if assertion else "- Preserved the raw note; no supported facts were extracted.")
         summary.extend(f"- Unresolved conflict: {escape(c.entity_name)}.{escape(c.field)} ({c.conflict_id})." for c in conflicts)
         if not conflicts:
             summary.append("- No unresolved conflicts detected in this source's facts.")

@@ -6,8 +6,8 @@ from typing import TypeVar
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from goflight_memory.agent.prompts import EXTRACTION, PAGE_SELECTION, QUERY_ANSWER, ROUTING
-from goflight_memory.core.models import Extraction, PageSelection, QueryResult, RouterDecision
+from goflight_memory.agent.prompts import CORRECT_ANSWER, EXTRACTION, PAGE_SELECTION, QUERY_ANSWER, ROUTING
+from goflight_memory.core.models import Conflict, Extraction, PageSelection, QueryResult, RouterDecision
 
 Result = TypeVar("Result", bound=BaseModel)
 
@@ -64,3 +64,10 @@ class LLMClient:
         return self._structured(
             QUERY_ANSWER, json.dumps({"question": question, "wiki_pages": pages}), QueryResult,
         )
+
+    def correct_answer(self, question: str, pages: dict[str, str], previous: str,
+                       conflicts: list[Conflict]) -> QueryResult:
+        return self._structured(QUERY_ANSWER + "\n" + CORRECT_ANSWER,
+                                json.dumps({"question": question, "wiki_pages": pages, "previous_answer": previous,
+                                            "relevant_conflicts": [c.model_dump(mode="json") for c in conflicts]}),
+                                QueryResult)

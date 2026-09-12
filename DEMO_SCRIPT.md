@@ -21,13 +21,19 @@ latency varies. Measured load + CLI sequence: about 36 seconds, excluding setup/
 7. **3:00–3:25 — Lint:** “Check the memory for problems.” then `/lint`: matching reports,
    two intended contradictions, no orphan/broken/missing references in the fresh run.
    Temporary orphan fixtures are independently demonstrated by `test_lint.py`.
-8. **3:25–3:50 — History:** `/exit`, `git -C "$DEMO_ROOT" log --oneline`,
-   `git -C "$DEMO_ROOT" show --stat HEAD`, then unchanged status/HEAD checks.
-9. **3:50–4:10 — Lock:** overlapping writers serialize on one repository; the test
-   proves both writers' evidence and history survive.
-10. **4:10–4:30 — Cuts:** no resolution/UI/MCP/auth/deployment. Explain extraction
-    limits and next-week work from SUBMISSION_NOTE.md.
+8. **3:25–4:05 — Human decision:** “Show conflicts.” Pick the displayed home-base ID
+   with `/resolve <id>`, enter “Westchester”, give “Operator confirmed the move”, review
+   all evidence, then `yes`. Query the base again and `/lint`: that conflict is no longer
+   unresolved. Other conflicts stay active. Show `/add new customer Wajeeh`: entity-only
+   page with source provenance, no invented attributes.
+9. **4:05–4:30 — History:** `/exit`, `git -C "$DEMO_ROOT" log --oneline`,
+   `git -C "$DEMO_ROOT" show --stat HEAD`. Query/lint made no commits; the explicit
+   resolution and entity assertion each did. Inspect the resolution's two-file diff.
+10. **4:30–4:55 — Lock and cuts:** cooperating writes serialize; stale review is
+    rejected. No UI/MCP/auth/deployment or automatic AI resolution. Explain bounded
+    query/grammar and semantic-extraction limitations from SUBMISSION_NOTE.md.
 
 Do not hide failures: the development checkout retains an extra catering-field
-warning and may reject a one-sided answer. Fresh loads use clarified guidance but
-remain probabilistic. No answers or final wiki pages are hardcoded.
+warning. Unsafe relevant-conflict answers are retried once, then receive a structured
+fallback if necessary. Fresh loads remain probabilistic. No final wiki pages are
+hardcoded; the fallback is deterministic from stored competing evidence.

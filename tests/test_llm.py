@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -40,6 +41,19 @@ class LLMTests(unittest.TestCase):
             client.answer("question", {"aircraft/n123gf.md": "Compiled facts"})
             self.assertIs(structured.call_args.args[2], QueryResult)
             self.assertIn("Compiled facts", structured.call_args.args[1])
+
+    def test_corrective_call_keeps_context_and_previous_answer_in_structured_data(self):
+        with patch.object(LLMClient, "_structured") as structured:
+            LLMClient("test-placeholder").correct_answer(
+                "Where is it based?", {"aircraft/n123gf.md": "Compiled evidence"}, "Unsafe first answer", [])
+            instruction, content, schema = structured.call_args.args
+            self.assertIs(schema, QueryResult)
+            self.assertIn("Rewrite it once", instruction)
+            self.assertIn("Do not choose a winner", instruction)
+            payload = json.loads(content)
+            self.assertEqual(payload["previous_answer"], "Unsafe first answer")
+            self.assertEqual(payload["wiki_pages"], {"aircraft/n123gf.md": "Compiled evidence"})
+            self.assertEqual(payload["relevant_conflicts"], [])
 
     def test_provider_uses_validated_output_without_tools_or_storage(self):
         parsed = Extraction(entities=[], facts=[])

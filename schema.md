@@ -49,7 +49,7 @@ co-occurrence alone. Omit missing fields rather than asserting invented values.
 5. Never silently overwrite contradictory information. Preserve both values and
    their source/contributor evidence; mark the affected claim and the Conflicts
    section **Unresolved** with a stable conflict ID. Recency alone does not resolve
-   a contradiction. Human review is required; resolution is not implemented yet.
+   a contradiction. Only an explicitly confirmed human decision resolves it.
    Compare values using Unicode normalization, case folding, and collapsed whitespace.
    All different values for one entity/field are conservatively conflicting, even
    for potentially multi-valued fields such as contacts or preferences.
@@ -66,7 +66,41 @@ resolves paths, writes files, and preserves conflicts. Equal normalized values s
 one fact row; multiple evidence references are separated by `<br>`. Python escapes
 Markdown/HTML metacharacters in textual data so it cannot create page structure.
 Conflict sections use stable `### conflict-<hash>` headings, `Field: <field>`, and an
-exact `Status: unresolved` line followed by every supported value and its evidence.
+exact `Status: unresolved` or `Status: resolved` line followed by every historical
+supported value and its evidence.
+
+## Explicit entity assertions
+
+A direct instruction such as “Add customer Wajeeh” is useful entity-existence evidence.
+Store the instruction as a raw source first. An entity-only page keeps the empty Facts
+table and adds `Entity assertion: <source/contributor evidence>` under Sources. Merge
+duplicate assertions into the existing page; never invent attributes or treat a vague
+person mention as evidence of being a customer. No new entity types are introduced.
+
+## Human resolution records
+
+The existing stable conflict ID survives resolution and later reopening. Keep the
+original fact rows and competing evidence. Under that conflict's heading, append:
+
+```text
+#### Human resolution
+
+Current value: <selected value or qualified human statement>
+Reviewer: <identified session user>
+Reason: <human explanation>
+Resolved at: <timezone-aware ISO timestamp>
+Reviewed values: <escaped JSON string array>
+Reviewed sources: <source/contributor evidence>
+```
+
+Values use the same escaping and evidence syntax as facts. Decision records are
+append-only history: the latest decision supplies the current value only while the
+conflict is resolved. A new distinct fact value outside its reviewed values reopens
+the field; previous decisions remain history. Matching-value evidence does not reopen.
+Queries project the active human value instead of treating superseded alternatives as
+current facts. Lint counts only unresolved conflicts. One parser/model is shared by
+ingest, query, lint, and resolution; the LLM cannot write a resolution. Only explicit
+human confirmation writes the page/changelog and creates a scoped Git commit.
 
 Pages and index are generated deterministically. Ingest refuses noncanonical manual
 edits instead of silently discarding them. Raw sources must never be edited, including
