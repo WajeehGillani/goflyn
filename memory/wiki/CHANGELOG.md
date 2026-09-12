@@ -35,3 +35,18 @@ Changes:
 - Added new facts or supporting evidence; retained previous evidence.
 - Unresolved conflict: Atlantic Air.minimum&#95;booking&#95;notice (conflict-477276a53cd8f9e2).
 - Unresolved conflict: N123GF.home&#95;base (conflict-2fc1375b65590d97).
+
+## source-003
+
+Contributor: Sarah
+Created at: 2026-09-12T14:02:45.181205+00:00
+Source: [source-003](../raw/source-003.md)
+
+Updated:
+
+- [Acme Corp](customers/acme-corp.md)
+
+Changes:
+
+- Added new facts or supporting evidence; retained previous evidence.
+- No unresolved conflicts detected in this source's facts.
